@@ -32,6 +32,8 @@ interface UniswapQuote {
   effective_price_usdt: number
   is_stale: boolean
   error?: string
+  source?: string
+  validated?: boolean
 }
 
 interface StrategyDecision {
@@ -50,30 +52,34 @@ interface StrategyDecision {
   reason: string
 }
 
+interface MarketData {
+  lbank_ticker?: LBankTicker
+  uniswap_quote?: UniswapQuote
+  decision?: StrategyDecision
+}
+
 interface MarketState {
-  ts: string;
-  lbank_ticker?: LBankTicker;
-  uniswap_quote?: UniswapQuote;
-  uniswap_quote_csr?: UniswapQuote;
-  uniswap_quote_csr25?: UniswapQuote;
-  is_stale: boolean;
+  ts: string
+  csr_usdt: MarketData
+  csr25_usdt: MarketData
+  is_stale: boolean
 }
 
 interface SystemStatus {
-  ts: string;
-  lbank_gateway?: ServiceHealth;
-  uniswap_quote_csr25?: ServiceHealth;
-  uniswap_quote_csr?: ServiceHealth;
-  strategy_engine?: ServiceHealth;
-  overall_status: string;
+  ts: string
+  lbank_gateway?: ServiceHealth
+  uniswap_quote_csr25?: ServiceHealth
+  uniswap_quote_csr?: ServiceHealth
+  strategy_engine?: ServiceHealth
+  overall_status: string
 }
 
 interface DashboardData {
-  ts: string;
-  market_state?: MarketState;
-  decision?: StrategyDecision;
-  system_status: SystemStatus;
-  opportunities: StrategyDecision[];
+  ts: string
+  market_state?: MarketState
+  decision?: { csr_usdt?: StrategyDecision; csr25_usdt?: StrategyDecision }
+  system_status: SystemStatus
+  opportunities: StrategyDecision[]
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -85,11 +91,7 @@ function StatusBadge({ status }: { status: string }) {
     unknown: "bg-gray-500",
   };
   return (
-    <span
-      className={`px-2 py-1 rounded text-xs font-bold text-white ${
-        colors[status] || colors.unknown
-      }`}
-    >
+    <span className={`px-2 py-1 rounded text-xs font-bold text-white ${colors[status] || colors.unknown}`}>
       {status.toUpperCase()}
     </span>
   );
@@ -101,86 +103,207 @@ function formatPrice(price: number): string {
   return price.toFixed(2);
 }
 
-function formatBps(bps: number): string {
-  return `${bps.toFixed(1)} bps`;
-}
-
-function formatPercent(bps: number): string {
-  return `${(bps / 100).toFixed(2)}%`;
-}
-
 function timeAgo(ts: string): string {
-  const now = new Date();
-  const then = new Date(ts);
-  const diff = Math.floor((now.getTime() - then.getTime()) / 1000);
-  if (diff < 5) return "just now";
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  return `${Math.floor(diff / 3600)}h ago`;
+  const now = Date.now();
+  const then = new Date(ts).getTime();
+  const diffMs = now - then;
+  if (diffMs < 1000) return "just now";
+  if (diffMs < 60000) return `${Math.floor(diffMs / 1000)}s ago`;
+  if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)}m ago`;
+  return `${Math.floor(diffMs / 3600000)}h ago`;
+}
+
+function MarketCard({ title, market, uniswapHealth }: { 
+  title: string; 
+  market: MarketData; 
+  uniswapHealth?: ServiceHealth 
+}) {
+  const lbank = market.lbank_ticker;
+  const uniswap = market.uniswap_quote;
+  const decision = market.decision;
+
+  return (
+    <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
+      <h3 className="text-xl font-bold text-white mb-4">{title}</h3>
+      
+      {/* LBank (CEX) Section */}
+      <div className="mb-4 p-4 bg-slate-900 rounded-lg">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-slate-400 font-medium">LBank (CEX)</span>
+          {lbank && <span className="text-xs text-slate-500">{timeAgo(lbank.ts)}</span>}
+        </div>
+        {lbank ? (
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Bid</span>
+              <span className="font-mono text-green-400">${formatPrice(lbank.bid)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Ask</span>
+              <span className="font-mono text-red-400">${formatPrice(lbank.ask)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Last</span>
+              <span className="font-mono">${formatPrice(lbank.last)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Volume 24h</span>
+              <span className="font-mono text-sm">{lbank.volume_24h.toLocaleString()}</span>
+            </div>
+          </div>
+        ) : (
+          <div className="text-yellow-400 text-sm">No LBank data</div>
+        )}
+      </div>
+
+      {/* Uniswap (DEX) Section */}
+      <div className="mb-4 p-4 bg-slate-900 rounded-lg">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-slate-400 font-medium">Uniswap (DEX)</span>
+          {uniswap && <span className="text-xs text-slate-500">{timeAgo(uniswap.ts)}</span>}
+        </div>
+        {uniswap ? (
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Price</span>
+              <span className="font-mono text-blue-400">${formatPrice(uniswap.effective_price_usdt)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Source</span>
+              <span className="font-mono text-xs">{uniswap.source || 'unknown'}</span>
+            </div>
+            {uniswap.error ? (
+              <div className="text-yellow-400 text-sm">
+                {uniswap.error === 'Pool not found' 
+                  ? 'Pool not found' 
+                  : uniswap.error.toLowerCase()}
+              </div>
+            ) : uniswap.validated ? (
+              <div className="text-green-400 text-sm">Price OK</div>
+            ) : (
+              <div className="text-yellow-400 text-sm">Awaiting validation</div>
+            )}
+          </div>
+        ) : (
+          <div className="text-yellow-400 text-sm">No Uniswap data</div>
+        )}
+      </div>
+
+      {/* Spread & Edge Section */}
+      <div className="mb-4 p-4 bg-slate-900 rounded-lg">
+        <div className="text-slate-400 font-medium mb-2">Spread & Edge</div>
+        {decision ? (
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Raw Spread</span>
+              <span className={`font-mono ${decision.raw_spread_bps > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {decision.raw_spread_bps.toFixed(1)} bps
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Est. Costs</span>
+              <span className="font-mono text-orange-400">{decision.estimated_cost_bps} bps</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Edge After Costs</span>
+              <span className={`font-mono font-bold ${decision.edge_after_costs_bps > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {decision.edge_after_costs_bps.toFixed(1)} bps
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="text-slate-500 text-sm">Awaiting data</div>
+        )}
+      </div>
+
+      {/* Decision Section */}
+      <div className="p-4 bg-slate-900 rounded-lg">
+        <div className="text-slate-400 font-medium mb-2">Decision</div>
+        {decision ? (
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Would Trade</span>
+              <span className={`font-bold ${decision.would_trade ? 'text-green-400' : 'text-slate-400'}`}>
+                {decision.would_trade ? 'YES' : 'NO'}
+              </span>
+            </div>
+            {decision.would_trade && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Direction</span>
+                  <span className="font-mono text-sm">{decision.direction}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Suggested Size</span>
+                  <span className="font-mono">${decision.suggested_size_usdt}</span>
+                </div>
+              </>
+            )}
+            <div className="text-xs text-slate-500 mt-2">{decision.reason}</div>
+          </div>
+        ) : (
+          <div className="text-slate-500 text-sm">No decision yet</div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function App() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
   useEffect(() => {
     let ws: WebSocket | null = null;
-    let reconnectTimeout: number | null = null;
 
-    const connect = () => {
-      try {
-        ws = new WebSocket(`${API_URL.replace("http", "ws")}/ws`);
+    function connect() {
+      ws = new WebSocket(`${API_URL.replace('http', 'ws')}/ws`);
 
-        ws.onopen = () => {
-          setError(null);
-        };
+      ws.onopen = () => {
+        setError(null);
+      };
 
-        ws.onmessage = (event) => {
-          try {
-            const parsed = JSON.parse(event.data);
-            setData(parsed);
-            setLastUpdate(new Date());
-          } catch (e) {
-            console.error("Failed to parse message:", e);
-          }
-        };
+      ws.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          setData(parsed);
+          setLastUpdate(new Date());
+        } catch {
+          console.error('Failed to parse WS message');
+        }
+      };
 
-        ws.onclose = () => {
-          reconnectTimeout = window.setTimeout(connect, 2000);
-        };
+      ws.onerror = () => {
+        setError('WebSocket error');
+      };
 
-        ws.onerror = () => {
-          setError("WebSocket connection failed");
-        };
-      } catch (e) {
-        setError("Failed to connect");
-        reconnectTimeout = window.setTimeout(connect, 2000);
-      }
-    };
+      ws.onclose = () => {
+        setError('Connection lost');
+        setTimeout(connect, 3000);
+      };
+    }
 
     connect();
 
     return () => {
-      if (ws) ws.close();
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      ws?.close();
     };
   }, []);
 
-  // Fallback to polling if WebSocket fails
   useEffect(() => {
     if (error) {
       const interval = setInterval(async () => {
         try {
-          const res = await fetch(`${API_URL}/api/dashboard`);
-          if (res.ok) {
-            const parsed = await res.json();
-            setData(parsed);
+          const resp = await fetch(`${API_URL}/api/dashboard`);
+          if (resp.ok) {
+            const newData = await resp.json();
+            setData(newData);
             setLastUpdate(new Date());
             setError(null);
           }
-        } catch (e) {
-          console.error("Polling failed:", e);
+        } catch {
+          console.error('Polling failed');
         }
       }, 2000);
       return () => clearInterval(interval);
@@ -189,374 +312,120 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-white p-6">
+      {/* Header */}
       <header className="mb-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white">
-              CSR Arbitrage Monitor
-            </h1>
-            <p className="text-slate-400 mt-1">
-              Real-time arbitrage opportunity detection
-            </p>
+            <h1 className="text-3xl font-bold text-white">CSR Arbitrage Monitor</h1>
+            <p className="text-slate-400 mt-1">Real-time arbitrage opportunity detection</p>
           </div>
           <div className="text-right">
             <div className="text-sm text-slate-400">Last Update</div>
-            <div className="text-lg font-mono">
-              {timeAgo(lastUpdate.toISOString())}
-            </div>
+            <div className="text-lg font-mono">{timeAgo(lastUpdate.toISOString())}</div>
             {error && <div className="text-red-400 text-sm mt-1">{error}</div>}
           </div>
         </div>
       </header>
 
-      {/* System Status */}
+      {/* System Status Bar */}
       <section className="mb-8">
-        <h2 className="text-xl font-semibold mb-4 text-slate-300">
-          System Status
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <h2 className="text-xl font-semibold mb-4 text-slate-300">System Status</h2>
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
             <div className="flex items-center justify-between mb-2">
               <span className="text-slate-400">Overall</span>
-              <StatusBadge
-                status={data?.system_status.overall_status || "unknown"}
-              />
+              <StatusBadge status={data?.system_status.overall_status || 'unknown'} />
             </div>
           </div>
-
           <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
             <div className="flex items-center justify-between mb-2">
               <span className="text-slate-400">LBank Gateway</span>
-              <StatusBadge
-                status={data?.system_status.lbank_gateway?.status || "unknown"}
-              />
-            </div>
-            {data?.system_status.lbank_gateway && (
-              <div className="text-xs text-slate-500">
-                {data.system_status.lbank_gateway.connected
-                  ? "🟢 Connected"
-                  : "🔴 Disconnected"}
-                {data.system_status.lbank_gateway.last_message_ts && (
-                  <span className="ml-2">
-                    {timeAgo(data.system_status.lbank_gateway.last_message_ts)}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-slate-400">Uniswap Quote (CSR25)</span>
-              <StatusBadge
-                status={
-                  data?.system_status.uniswap_quote_csr25?.status || "unknown"
-                }
-              />
+              <StatusBadge status={data?.system_status.lbank_gateway?.status || 'unknown'} />
             </div>
           </div>
-
           <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-slate-400">Uniswap Quote (CSR)</span>
-              <StatusBadge
-                status={
-                  data?.system_status.uniswap_quote_csr?.status || "unknown"
-                }
-              />
+              <span className="text-slate-400">Uniswap CSR</span>
+              <StatusBadge status={data?.system_status.uniswap_quote_csr?.status || 'unknown'} />
             </div>
           </div>
-
           <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-slate-400">Strategy Engine</span>
-              <StatusBadge
-                status={
-                  data?.system_status.strategy_engine?.status || "unknown"
-                }
-              />
+              <span className="text-slate-400">Uniswap CSR25</span>
+              <StatusBadge status={data?.system_status.uniswap_quote_csr25?.status || 'unknown'} />
+            </div>
+          </div>
+          <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-slate-400">Strategy</span>
+              <StatusBadge status={data?.system_status.strategy_engine?.status || 'unknown'} />
             </div>
           </div>
         </div>
       </section>
 
-      {/* Arbitrage Opportunity */}
+      {/* Execution Mode Banner */}
       <section className="mb-8">
-        <h2 className="text-xl font-semibold mb-4 text-slate-300">
-          Current Opportunity
-        </h2>
-        {data?.decision ? (
-          <div
-            className={`bg-slate-800 rounded-lg p-6 border-2 ${
-              data.decision.would_trade
-                ? "border-green-500"
-                : "border-slate-700"
-            }`}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-4">
-                <span className="text-2xl font-bold">
-                  {data.decision.symbol.toUpperCase()}
-                </span>
-                {data.decision.would_trade && (
-                  <span className="bg-green-500 text-white px-3 py-1 rounded-full text-sm font-bold animate-pulse">
-                    OPPORTUNITY DETECTED
-                  </span>
-                )}
-              </div>
-              <div className="text-right">
-                <div className="text-sm text-slate-400">Direction</div>
-                <div className="font-mono text-lg">
-                  {data.decision.direction.replace(/_/g, " ").toUpperCase()}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <div>
-                <div className="text-sm text-slate-400 mb-1">LBank Bid</div>
-                <div className="text-xl font-mono">
-                  ${formatPrice(data.decision.lbank_bid)}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-slate-400 mb-1">LBank Ask</div>
-                <div className="text-xl font-mono">
-                  ${formatPrice(data.decision.lbank_ask)}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-slate-400 mb-1">Uniswap Price</div>
-                <div className="text-xl font-mono">
-                  ${formatPrice(data.decision.uniswap_price)}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-slate-400 mb-1">
-                  Suggested Size
-                </div>
-                <div className="text-xl font-mono">
-                  ${data.decision.suggested_size_usdt.toLocaleString()}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6 mt-6 pt-6 border-t border-slate-700">
-              <div>
-                <div className="text-sm text-slate-400 mb-1">Raw Spread</div>
-                <div className="text-2xl font-bold text-blue-400">
-                  {formatPercent(data.decision.raw_spread_bps)}
-                </div>
-                <div className="text-xs text-slate-500">
-                  {formatBps(data.decision.raw_spread_bps)}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-slate-400 mb-1">Est. Costs</div>
-                <div className="text-2xl font-bold text-orange-400">
-                  {formatPercent(data.decision.estimated_cost_bps)}
-                </div>
-                <div className="text-xs text-slate-500">
-                  {formatBps(data.decision.estimated_cost_bps)}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-slate-400 mb-1">
-                  Edge After Costs
-                </div>
-                <div
-                  className={`text-2xl font-bold ${
-                    data.decision.edge_after_costs_bps > 0
-                      ? "text-green-400"
-                      : "text-red-400"
-                  }`}
-                >
-                  {formatPercent(data.decision.edge_after_costs_bps)}
-                </div>
-                <div className="text-xs text-slate-500">
-                  {formatBps(data.decision.edge_after_costs_bps)}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 p-3 bg-slate-900 rounded text-sm text-slate-400">
-              {data.decision.reason}
-            </div>
+        <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-400">Execution Mode:</span>
+            <span className="px-3 py-1 bg-blue-600 text-white rounded font-bold">OFF</span>
           </div>
-        ) : (
-          <div className="bg-slate-800 rounded-lg p-6 border border-slate-700 text-center text-slate-500">
-            No arbitrage decision available yet
+          <div className="flex items-center gap-4">
+            <span className="text-slate-400">Kill Switch:</span>
+            <span className="px-3 py-1 bg-green-600 text-white rounded font-bold">ACTIVE</span>
           </div>
-        )}
-      </section>
-
-      {/* Market Data */}
-      <section className="mb-8">
-        <h2 className="text-xl font-semibold mb-4 text-slate-300">
-          Market Data
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* LBank Data */}
-          <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-              <span>📊</span> LBank (CEX)
-            </h3>
-            {data?.market_state?.lbank_ticker ? (
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Symbol</span>
-                  <span className="font-mono">
-                    {data.market_state.lbank_ticker.symbol.toUpperCase()}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Last Price</span>
-                  <span className="font-mono">
-                    ${formatPrice(data.market_state.lbank_ticker.last)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Bid</span>
-                  <span className="font-mono text-green-400">
-                    ${formatPrice(data.market_state.lbank_ticker.bid)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Ask</span>
-                  <span className="font-mono text-red-400">
-                    ${formatPrice(data.market_state.lbank_ticker.ask)}
-                  </span>
-                </div>
-                <div className="text-xs text-slate-500 mt-2">
-                  Updated: {timeAgo(data.market_state.lbank_ticker.ts)}
-                </div>
-              </div>
-            ) : (
-              <div className="text-slate-500">No data available</div>
-            )}
-          </div>
-
-          {/* Uniswap Data - CSR25 */}
-          <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-              <span>🦄</span> Uniswap (DEX) - CSR25
-            </h3>
-            {data?.market_state?.uniswap_quote_csr25 ? (
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Pair</span>
-                  <span className="font-mono">
-                    {data.market_state.uniswap_quote_csr25.pair}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Effective Price</span>
-                  <span className="font-mono">
-                    $
-                    {formatPrice(
-                      data.market_state.uniswap_quote_csr25.effective_price_usdt
-                    )}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Quote Size</span>
-                  <span className="font-mono">
-                    ${data.market_state.uniswap_quote_csr25.amount_in} USDT
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Chain</span>
-                  <span className="font-mono">
-                    Ethereum (ID:{" "}
-                    {data.market_state.uniswap_quote_csr25.chain_id})
-                  </span>
-                </div>
-                {data.market_state.uniswap_quote_csr25.error ? (
-                  <div className="text-yellow-400 text-sm mt-2">
-                    {data.market_state.uniswap_quote_csr25.error ===
-                    "Pool not found"
-                      ? "Uniswap price: unavailable (v4 pool not found)"
-                      : `Uniswap price: ${data.market_state.uniswap_quote_csr25.error.toLowerCase()}`}
-                  </div>
-                ) : (
-                  <div className="text-green-400 text-sm mt-2">
-                    Uniswap price: OK (v4 subgraph)
-                  </div>
-                )}
-                <div className="text-xs text-slate-500 mt-2">
-                  Updated: {timeAgo(data.market_state.uniswap_quote_csr25.ts)}
-                </div>
-              </div>
-            ) : (
-              <div className="text-slate-500">No data available</div>
-            )}
-          </div>
-
-          {/* Uniswap Data - CSR */}
-          <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-              <span>🦄</span> Uniswap (DEX) - CSR
-            </h3>
-            {data?.market_state?.uniswap_quote_csr ? (
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Pair</span>
-                  <span className="font-mono">
-                    {data.market_state.uniswap_quote_csr.pair}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Effective Price</span>
-                  <span className="font-mono">
-                    $
-                    {formatPrice(
-                      data.market_state.uniswap_quote_csr.effective_price_usdt
-                    )}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Quote Size</span>
-                  <span className="font-mono">
-                    ${data.market_state.uniswap_quote_csr.amount_in} USDT
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Chain</span>
-                  <span className="font-mono">
-                    Ethereum (ID: {data.market_state.uniswap_quote_csr.chain_id}
-                    )
-                  </span>
-                </div>
-                {data.market_state.uniswap_quote_csr.error ? (
-                  <div className="text-yellow-400 text-sm mt-2">
-                    {data.market_state.uniswap_quote_csr.error ===
-                    "Pool not found"
-                      ? "Uniswap price: unavailable (v4 pool not found)"
-                      : `Uniswap price: ${data.market_state.uniswap_quote_csr.error.toLowerCase()}`}
-                  </div>
-                ) : (
-                  <div className="text-green-400 text-sm mt-2">
-                    Uniswap price: OK (v4 pool state)
-                  </div>
-                )}
-                <div className="text-xs text-slate-500 mt-2">
-                  Updated: {timeAgo(data.market_state.uniswap_quote_csr.ts)}
-                </div>
-              </div>
-            ) : (
-              <div className="text-slate-500">No data available</div>
-            )}
-          </div>
+          <div className="text-sm text-slate-500">DRY RUN MODE - No trades executed</div>
         </div>
       </section>
+
+      {/* Main Market Cards - Side by Side */}
+      <section className="mb-8">
+        <h2 className="text-xl font-semibold mb-4 text-slate-300">Markets</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <MarketCard 
+            title="CSR / USDT" 
+            market={data?.market_state?.csr_usdt || { lbank_ticker: undefined, uniswap_quote: undefined, decision: undefined }} 
+            uniswapHealth={data?.system_status.uniswap_quote_csr}
+          />
+          <MarketCard 
+            title="CSR25 / USDT" 
+            market={data?.market_state?.csr25_usdt || { lbank_ticker: undefined, uniswap_quote: undefined, decision: undefined }} 
+            uniswapHealth={data?.system_status.uniswap_quote_csr25}
+          />
+        </div>
+      </section>
+
+      {/* Opportunities */}
+      {data?.opportunities && data.opportunities.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-xl font-semibold mb-4 text-slate-300">Active Opportunities</h2>
+          <div className="space-y-4">
+            {data.opportunities.map((opp, i) => (
+              <div key={i} className="bg-green-900/30 border border-green-500 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-bold text-green-400">{opp.symbol.toUpperCase()}</span>
+                    <span className="ml-4 text-slate-300">{opp.direction}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-green-400 font-bold">{opp.edge_after_costs_bps.toFixed(1)} bps edge</span>
+                    <span className="ml-4 text-slate-400">Size: ${opp.suggested_size_usdt}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Footer */}
       <footer className="text-center text-slate-500 text-sm mt-8">
-        <p>CSR Arbitrage Monitor • Dry-Run Mode (No Execution)</p>
+        <p>CSR Arbitrage Monitor - Dry-Run Mode (No Execution)</p>
         <p className="mt-1">Data refreshes automatically via WebSocket</p>
       </footer>
     </div>
   );
 }
 
-export default App
+export default App;
