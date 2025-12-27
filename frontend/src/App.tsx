@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8001";
+// In production (behind nginx), use relative URLs. In dev, use localhost.
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "" : "http://localhost:8001");
 
 interface ServiceHealth {
   service: string;

@@ -395,6 +395,48 @@ app.get('/api/opportunities', (req, res) => {
   });
 });
 
+// Debug endpoint - shows configured URLs and last fetch timestamps (no secrets)
+const serviceLastFetch: Record<string, string | null> = {
+  lbank_gateway: null,
+  latoken_gateway: null,
+  uniswap_quote_csr: null,
+  uniswap_quote_csr25: null,
+  strategy_engine: null,
+};
+
+app.get('/api/debug', (req, res) => {
+  res.json({
+    ts: new Date().toISOString(),
+    node_version: process.version,
+    configured_urls: {
+      lbank_gateway: LBANK_GATEWAY_URL,
+      latoken_gateway: LATOKEN_GATEWAY_URL,
+      uniswap_quote_csr: UNISWAP_QUOTE_CSR_URL,
+      uniswap_quote_csr25: UNISWAP_QUOTE_URL,
+      strategy_engine: STRATEGY_ENGINE_URL,
+    },
+    last_successful_fetch: {
+      lbank_gateway: dashboardData.system_status?.lbank_gateway?.ts || null,
+      uniswap_quote_csr: dashboardData.system_status?.uniswap_quote_csr?.ts || null,
+      uniswap_quote_csr25: dashboardData.system_status?.uniswap_quote_csr25?.ts || null,
+      strategy_engine: dashboardData.system_status?.strategy_engine?.ts || null,
+    },
+    service_status: {
+      lbank_gateway: dashboardData.system_status?.lbank_gateway?.status || 'unknown',
+      uniswap_quote_csr: dashboardData.system_status?.uniswap_quote_csr?.status || 'unknown',
+      uniswap_quote_csr25: dashboardData.system_status?.uniswap_quote_csr25?.status || 'unknown',
+      strategy_engine: dashboardData.system_status?.strategy_engine?.status || 'unknown',
+      overall: dashboardData.system_status?.overall_status || 'unknown',
+    },
+    market_data_available: {
+      csr_usdt_lbank: !!dashboardData.market_state?.csr_usdt?.lbank_ticker,
+      csr_usdt_uniswap: !!dashboardData.market_state?.csr_usdt?.uniswap_quote,
+      csr25_usdt_lbank: !!dashboardData.market_state?.csr25_usdt?.lbank_ticker,
+      csr25_usdt_uniswap: !!dashboardData.market_state?.csr25_usdt?.uniswap_quote,
+    },
+  });
+});
+
 // Create HTTP server
 const server = http.createServer(app);
 
