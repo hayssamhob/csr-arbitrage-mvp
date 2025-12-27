@@ -22,11 +22,19 @@ cd "$(dirname "$0")/services/lbank-gateway" && npm run dev &
 LBANK_PID=$!
 sleep 3
 
-# Start Uniswap Quote Service
-echo "🦄 Starting Uniswap Quote Service (port 3002)..."
-cd "$(dirname "$0")/services/uniswap-quote" && npm run dev &
+# Start Uniswap Quote Service (CSR25)
+echo "Starting Uniswap Quote Service (CSR25)..."
+cd services/uniswap-quote || exit 1
+npm run dev &
 UNISWAP_PID=$!
-sleep 3
+cd ../..
+
+# Start Uniswap Quote Service (CSR)
+echo "Starting Uniswap Quote Service (CSR)..."
+cd services/uniswap-quote-csr || exit 1
+npm run dev &
+UNISWAP_CSR_PID=$!
+cd ../..
 
 # Start Strategy Engine
 echo "🧠 Starting Strategy Engine (port 3003)..."
@@ -55,14 +63,15 @@ echo ""
 echo "📍 Access the dashboard at: http://localhost:5173"
 echo ""
 echo "Services:"
-echo "  - LBank Gateway:     http://localhost:3001"
-echo "  - Uniswap Quote:     http://localhost:3002"
-echo "  - Strategy Engine:   http://localhost:3003"
-echo "  - Backend API:       http://localhost:8001"
-echo "  - Frontend:          http://localhost:5173"
+echo "  - LBank Gateway:       http://localhost:3001"
+echo "  - Uniswap Quote (CSR25): http://localhost:3002"
+echo "  - Uniswap Quote (CSR):  http://localhost:3005"
+echo "  - Strategy Engine:     http://localhost:3003"
+echo "  - Backend API:         http://localhost:8001"
+echo "  - Frontend:            http://localhost:5173"
 echo ""
 echo "Press Ctrl+C to stop all services"
 
 # Wait for Ctrl+C
-trap 'echo "Stopping all services..."; kill $LBANK_PID $UNISWAP_PID $STRATEGY_PID $API_PID $FRONTEND_PID 2>/dev/null; exit' INT
+trap 'echo "Stopping all services..."; kill $LBANK_PID $UNISWAP_PID $UNISWAP_CSR_PID $STRATEGY_PID $API_PID $FRONTEND_PID 2>/dev/null; exit' INT
 wait

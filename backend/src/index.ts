@@ -15,7 +15,10 @@ dotenv.config();
 const PORT = parseInt(process.env.PORT || '8001');
 const LBANK_GATEWAY_URL = process.env.LBANK_GATEWAY_URL || 'http://localhost:3001';
 const UNISWAP_QUOTE_URL = process.env.UNISWAP_QUOTE_URL || 'http://localhost:3002';
-const STRATEGY_ENGINE_URL = process.env.STRATEGY_ENGINE_URL || 'http://localhost:3003';
+const UNISWAP_QUOTE_CSR_URL =
+  process.env.UNISWAP_QUOTE_CSR_URL || "http://localhost:3005";
+const STRATEGY_ENGINE_URL =
+  process.env.STRATEGY_ENGINE_URL || "http://localhost:3003";
 
 // Types
 interface ServiceHealth {
@@ -31,13 +34,20 @@ interface ServiceHealth {
 
 interface DashboardData {
   ts: string;
-  market_state?: any;
+  market_state?: {
+    ts: string;
+    lbank_ticker?: any;
+    uniswap_quote_csr25?: any;
+    uniswap_quote_csr?: any;
+    is_stale: boolean;
+  };
   decision?: any;
   system_status: {
     ts: string;
-    lbank_gateway?: ServiceHealth;
-    uniswap_quote?: ServiceHealth;
-    strategy_engine?: ServiceHealth;
+    lbank_gateway: ServiceHealth;
+    uniswap_quote_csr25: ServiceHealth;
+    uniswap_quote_csr: ServiceHealth;
+    strategy_engine: ServiceHealth;
     overall_status: string;
   };
   opportunities: any[];
@@ -48,14 +58,14 @@ let dashboardData: DashboardData = {
   ts: new Date().toISOString(),
   system_status: {
     ts: new Date().toISOString(),
-    overall_status: 'unknown'
+    overall_status: "unknown",
   },
-  opportunities: []
+  opportunities: [],
 };
 
 const wsClients = new Set<WebSocket>();
 const httpClient = axios.create({
-  timeout: 5000
+  timeout: 5000,
 });
 
 // Fetch data from microservices
@@ -69,50 +79,76 @@ async function fetchServiceData() {
       const resp = await httpClient.get(`${LBANK_GATEWAY_URL}/ready`);
       const data = resp.data;
       lbankHealth = {
-        service: 'lbank-gateway',
-        status: data.status || 'unknown',
+        service: "lbank-gateway",
+        status: data.status || "unknown",
         ts: data.ts || now,
         is_stale: data.is_stale || false,
         connected: data.connected || false,
         last_message_ts: data.last_message_ts,
         reconnect_count: data.reconnect_count || 0,
-        errors_last_5m: data.errors_last_5m || 0
+        errors_last_5m: data.errors_last_5m || 0,
       };
     } catch {
       lbankHealth = {
-        service: 'lbank-gateway',
-        status: 'error',
+        service: "lbank-gateway",
+        status: "error",
         ts: now,
         is_stale: true,
         connected: false,
         reconnect_count: 0,
-        errors_last_5m: 0
+        errors_last_5m: 0,
       };
     }
 
-    // Fetch Uniswap Quote health
-    let uniswapHealth: ServiceHealth | undefined;
+    // Fetch Uniswap Quote health for CSR25
+    let uniswapHealthCSR25: ServiceHealth | undefined;
     try {
       const resp = await httpClient.get(`${UNISWAP_QUOTE_URL}/health`);
       const data = resp.data;
-      uniswapHealth = {
-        service: 'uniswap-quote',
-        status: data.status || 'ok',
+      uniswapHealthCSR25 = {
+        service: "uniswap-quote-csr25",
+        status: data.status || "ok",
         ts: data.ts || now,
         is_stale: false,
         connected: true,
         reconnect_count: 0,
-        errors_last_5m: 0
+        errors_last_5m: 0,
       };
     } catch {
-      uniswapHealth = {
-        service: 'uniswap-quote',
-        status: 'error',
+      uniswapHealthCSR25 = {
+        service: "uniswap-quote-csr25",
+        status: "error",
         ts: now,
         is_stale: true,
         connected: false,
         reconnect_count: 0,
-        errors_last_5m: 0
+        errors_last_5m: 0,
+      };
+    }
+
+    // Fetch Uniswap Quote health for CSR
+    let uniswapHealthCSR: ServiceHealth | undefined;
+    try {
+      const resp = await httpClient.get(`${UNISWAP_QUOTE_CSR_URL}/health`);
+      const data = resp.data;
+      uniswapHealthCSR = {
+        service: "uniswap-quote-csr",
+        status: data.status || "ok",
+        ts: data.ts || now,
+        is_stale: false,
+        connected: true,
+        reconnect_count: 0,
+        errors_last_5m: 0,
+      };
+    } catch {
+      uniswapHealthCSR = {
+        service: "uniswap-quote-csr",
+        status: "error",
+        ts: now,
+        is_stale: true,
+        connected: false,
+        reconnect_count: 0,
+        errors_last_5m: 0,
       };
     }
 
@@ -120,29 +156,53 @@ async function fetchServiceData() {
     let strategyHealth: ServiceHealth | undefined;
     let marketState: any;
     let decision: any;
-    
+
     try {
       const resp = await httpClient.get(`${STRATEGY_ENGINE_URL}/health`);
       const data = resp.data;
       strategyHealth = {
-        service: 'strategy',
-        status: data.status || 'ok',
+        service: "strategy",
+        status: data.status || "ok",
         ts: data.ts || now,
         is_stale: false,
         connected: true,
         reconnect_count: 0,
-        errors_last_5m: 0
+        errors_last_5m: 0,
       };
     } catch {
       strategyHealth = {
-        service: 'strategy',
-        status: 'error',
+        service: "strategy",
+        status: "error",
         ts: now,
         is_stale: true,
         connected: false,
         reconnect_count: 0,
-        errors_last_5m: 0
+        errors_last_5m: 0,
       };
+    }
+
+    // Build market state with quotes from both services
+    let uniswapQuoteCSR25: any = null;
+    let uniswapQuoteCSR: any = null;
+
+    try {
+      const resp = await httpClient.post(`${UNISWAP_QUOTE_URL}/quote`, {
+        amount_usdt: 1000,
+        direction: "buy",
+      });
+      uniswapQuoteCSR25 = resp.data;
+    } catch {
+      // Ignore errors
+    }
+
+    try {
+      const resp = await httpClient.post(`${UNISWAP_QUOTE_CSR_URL}/quote`, {
+        amount_usdt: 1000,
+        direction: "buy",
+      });
+      uniswapQuoteCSR = resp.data;
+    } catch {
+      // Ignore errors
     }
 
     try {
@@ -150,6 +210,12 @@ async function fetchServiceData() {
       marketState = resp.data;
     } catch {
       // Ignore errors
+    }
+
+    // Update market state with both quotes
+    if (marketState) {
+      marketState.uniswap_quote_csr25 = uniswapQuoteCSR25;
+      marketState.uniswap_quote_csr = uniswapQuoteCSR;
     }
 
     try {
@@ -163,16 +229,17 @@ async function fetchServiceData() {
 
     // Determine overall status
     const statuses = [
-      lbankHealth?.status || 'error',
-      uniswapHealth?.status || 'error',
-      strategyHealth?.status || 'error'
+      lbankHealth?.status || "error",
+      uniswapHealthCSR25?.status || "error",
+      uniswapHealthCSR?.status || "error",
+      strategyHealth?.status || "error",
     ];
-    
-    let overall = 'unknown';
-    if (statuses.every(s => s === 'ok' || s === 'healthy')) {
-      overall = 'healthy';
-    } else if (statuses.some(s => s === 'error')) {
-      overall = 'degraded';
+
+    let overall = "unknown";
+    if (statuses.every((s) => s === "ok" || s === "healthy")) {
+      overall = "healthy";
+    } else if (statuses.some((s) => s === "error")) {
+      overall = "degraded";
     }
 
     // Update dashboard data
@@ -183,24 +250,25 @@ async function fetchServiceData() {
       system_status: {
         ts: now,
         lbank_gateway: lbankHealth,
-        uniswap_quote: uniswapHealth,
+        uniswap_quote_csr25: uniswapHealthCSR25,
+        uniswap_quote_csr: uniswapHealthCSR,
         strategy_engine: strategyHealth,
-        overall_status: overall
+        overall_status: overall,
       },
-      opportunities: (decision && decision.would_trade) ? [decision] : []
+      opportunities: decision && decision.would_trade ? [decision] : [],
     };
 
     // Broadcast to WebSocket clients
     if (wsClients.size > 0) {
       const message = JSON.stringify(dashboardData);
-      wsClients.forEach(client => {
+      wsClients.forEach((client) => {
         if (client.readyState === WebSocket.OPEN) {
           client.send(message);
         }
       });
     }
   } catch (error) {
-    console.error('Error fetching service data:', error);
+    console.error("Error fetching service data:", error);
   }
 }
 
