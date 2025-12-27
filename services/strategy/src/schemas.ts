@@ -19,6 +19,23 @@ export const LBankTickerEventSchema = z.object({
 
 export type LBankTickerEvent = z.infer<typeof LBankTickerEventSchema>;
 
+// Latoken ticker event (from gateway)
+export const LatokenTickerEventSchema = z.object({
+  type: z.literal('latoken.ticker'),
+  symbol: z.string(),
+  ts: z.string(),
+  bid: z.number(),
+  ask: z.number(),
+  last: z.number(),
+  volume_24h: z.number().optional(),
+  source_ts: z.string().optional(),
+});
+
+export type LatokenTickerEvent = z.infer<typeof LatokenTickerEventSchema>;
+
+// Generic CEX ticker (either LBank or Latoken)
+export type CexTickerEvent = LBankTickerEvent | LatokenTickerEvent;
+
 // Uniswap quote result (from quote service)
 export const UniswapQuoteResultSchema = z.object({
   type: z.literal("uniswap.quote"),
@@ -31,6 +48,8 @@ export const UniswapQuoteResultSchema = z.object({
   amount_out_unit: z.string(),
   effective_price_usdt: z.number(),
   estimated_gas: z.number(),
+  gas_price_gwei: z.number().optional(),
+  gas_cost_usdt: z.number().optional(),
   route: z
     .object({
       summary: z.string(),
@@ -47,7 +66,7 @@ export type UniswapQuoteResult = z.infer<typeof UniswapQuoteResultSchema>;
 
 // Strategy decision (dry-run output)
 export const StrategyDecisionSchema = z.object({
-  type: z.literal('strategy.decision'),
+  type: z.literal("strategy.decision"),
   ts: z.string(),
   symbol: z.string(),
   lbank_bid: z.number(),
@@ -55,9 +74,18 @@ export const StrategyDecisionSchema = z.object({
   uniswap_price: z.number(),
   raw_spread_bps: z.number(),
   estimated_cost_bps: z.number(),
+  cost_breakdown: z
+    .object({
+      cex_fee_bps: z.number(),
+      dex_lp_fee_bps: z.number(),
+      gas_cost_bps: z.number(),
+      network_fee_bps: z.number(),
+      slippage_bps: z.number(),
+    })
+    .optional(),
   edge_after_costs_bps: z.number(),
   would_trade: z.boolean(),
-  direction: z.enum(['buy_cex_sell_dex', 'buy_dex_sell_cex', 'none']),
+  direction: z.enum(["buy_cex_sell_dex", "buy_dex_sell_cex", "none"]),
   suggested_size_usdt: z.number(),
   reason: z.string(),
 });

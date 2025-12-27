@@ -1,6 +1,8 @@
 import { Config } from './config';
 import {
+  CexTickerEvent,
   LBankTickerEvent,
+  LatokenTickerEvent,
   StrategyDecision,
   UniswapQuoteResult,
 } from "./schemas";
@@ -12,12 +14,18 @@ import {
 // Supports multiple markets: CSR/USDT and CSR25/USDT
 // ============================================================================
 
-type LogFn = (level: string, event: string, data?: Record<string, unknown>) => void;
+type LogFn = (
+  level: string,
+  event: string,
+  data?: Record<string, unknown>
+) => void;
 
 export interface SingleMarketState {
   lbankTicker: LBankTickerEvent | null;
+  latokenTicker: LatokenTickerEvent | null;
   uniswapQuote: UniswapQuoteResult | null;
   lastLbankUpdate: string | null;
+  lastLatokenUpdate: string | null;
   lastUniswapUpdate: string | null;
   decision: StrategyDecision | null;
 }
@@ -32,19 +40,23 @@ export class StrategyEngine {
   private readonly onLog: LogFn;
   private readonly onDecision: (decision: StrategyDecision) => void;
   private readonly symbols: string[];
-  
+
   private state: MarketState = {
     csr_usdt: {
       lbankTicker: null,
+      latokenTicker: null,
       uniswapQuote: null,
       lastLbankUpdate: null,
+      lastLatokenUpdate: null,
       lastUniswapUpdate: null,
       decision: null,
     },
     csr25_usdt: {
       lbankTicker: null,
+      latokenTicker: null,
       uniswapQuote: null,
       lastLbankUpdate: null,
+      lastLatokenUpdate: null,
       lastUniswapUpdate: null,
       decision: null,
     },
@@ -58,13 +70,13 @@ export class StrategyEngine {
     this.config = config;
     this.onLog = onLog;
     this.onDecision = onDecision;
-    this.symbols = config.SYMBOLS.split(',').map(s => s.trim().toLowerCase());
+    this.symbols = config.SYMBOLS.split(",").map((s) => s.trim().toLowerCase());
   }
 
   // Update LBank ticker data
   updateLBankTicker(ticker: LBankTickerEvent): void {
     const symbol = ticker.symbol.toLowerCase();
-    
+
     // Check if this is a symbol we're tracking
     if (!this.symbols.includes(symbol)) {
       return;
@@ -75,8 +87,34 @@ export class StrategyEngine {
     if (this.state[marketKey]) {
       this.state[marketKey].lbankTicker = ticker;
       this.state[marketKey].lastLbankUpdate = new Date().toISOString();
-      
-      this.onLog('debug', 'lbank_ticker_updated', {
+
+      this.onLog("debug", "lbank_ticker_updated", {
+        symbol: ticker.symbol,
+        bid: ticker.bid,
+        ask: ticker.ask,
+      });
+
+      // Evaluate strategy for this market
+      this.evaluateMarket(marketKey);
+    }
+  }
+
+  // Update Latoken ticker data
+  updateLatokenTicker(ticker: LatokenTickerEvent): void {
+    const symbol = ticker.symbol.toLowerCase();
+
+    // Check if this is a symbol we're tracking
+    if (!this.symbols.includes(symbol)) {
+      return;
+    }
+
+    // Update the appropriate market state
+    const marketKey = symbol as keyof MarketState;
+    if (this.state[marketKey]) {
+      this.state[marketKey].latokenTicker = ticker;
+      this.state[marketKey].lastLatokenUpdate = new Date().toISOString();
+
+      this.onLog("debug", "latoken_ticker_updated", {
         symbol: ticker.symbol,
         bid: ticker.bid,
         ask: ticker.ask,
@@ -90,12 +128,12 @@ export class StrategyEngine {
   // Update Uniswap quote data
   updateUniswapQuote(quote: UniswapQuoteResult, symbol: string): void {
     const marketKey = symbol.toLowerCase() as keyof MarketState;
-    
+
     if (this.state[marketKey]) {
       this.state[marketKey].uniswapQuote = quote;
       this.state[marketKey].lastUniswapUpdate = new Date().toISOString();
-      
-      this.onLog('debug', 'uniswap_quote_updated', {
+
+      this.onLog("debug", "uniswap_quote_updated", {
         symbol,
         pair: quote.pair,
         effectivePrice: quote.effective_price_usdt,
@@ -112,36 +150,86 @@ export class StrategyEngine {
     return JSON.parse(JSON.stringify(this.state));
   }
 
+  // Get best available CEX ticker (LBank or Latoken)
+  getBestCexTicker(marketKey: keyof MarketState): CexTickerEvent | null {
+    const market = this.state[marketKey];
+
+    // Prefer LBank if available and fresh
+    if (market.lbankTicker && market.lastLbankUpdate) {
+      const age = Date.now() - new Date(market.lastLbankUpdate).getTime();
+      if (age < this.config.MAX_STALENESS_SECONDS * 1000) {
+        return market.lbankTicker;
+      }
+    }
+
+    // Fall back to Latoken
+    if (market.latokenTicker && market.lastLatokenUpdate) {
+      const age = Date.now() - new Date(market.lastLatokenUpdate).getTime();
+      if (age < this.config.MAX_STALENESS_SECONDS * 1000) {
+        return market.latokenTicker;
+      }
+    }
+
+    return null;
+  }
+
   // Check if market data is stale
   isMarketDataStale(marketKey: keyof MarketState): boolean {
     const now = Date.now();
     const maxStaleMs = this.config.MAX_STALENESS_SECONDS * 1000;
     const market = this.state[marketKey];
 
-    if (!market.lastLbankUpdate || !market.lastUniswapUpdate) {
+    // Need at least one CEX source and Uniswap
+    const hasCex = market.lastLbankUpdate || market.lastLatokenUpdate;
+    if (!hasCex || !market.lastUniswapUpdate) {
       return true;
     }
 
-    const lbankAge = now - new Date(market.lastLbankUpdate).getTime();
+    // Check CEX staleness (use freshest available)
+    let cexAge = Infinity;
+    if (market.lastLbankUpdate) {
+      cexAge = Math.min(
+        cexAge,
+        now - new Date(market.lastLbankUpdate).getTime()
+      );
+    }
+    if (market.lastLatokenUpdate) {
+      cexAge = Math.min(
+        cexAge,
+        now - new Date(market.lastLatokenUpdate).getTime()
+      );
+    }
+
     const uniswapAge = now - new Date(market.lastUniswapUpdate).getTime();
 
-    return lbankAge > maxStaleMs || uniswapAge > maxStaleMs;
+    return cexAge > maxStaleMs || uniswapAge > maxStaleMs;
   }
 
   // Main evaluation logic for a specific market
   private evaluateMarket(marketKey: keyof MarketState): void {
     const market = this.state[marketKey];
-    const { lbankTicker, uniswapQuote } = market;
+    const { uniswapQuote } = market;
+
+    // Get best available CEX ticker (LBank or Latoken)
+    const cexTicker = this.getBestCexTicker(marketKey);
 
     // Need both data sources
-    if (!lbankTicker || !uniswapQuote) {
-      this.onLog("debug", "evaluation_skipped", { market: marketKey, reason: "incomplete_data" });
+    if (!cexTicker || !uniswapQuote) {
+      this.onLog("debug", "evaluation_skipped", {
+        market: marketKey,
+        reason: "incomplete_data",
+        hasCex: !!cexTicker,
+        hasUniswap: !!uniswapQuote,
+      });
       return;
     }
 
     // Check for stale data
     if (this.isMarketDataStale(marketKey)) {
-      this.onLog("warn", "evaluation_skipped", { market: marketKey, reason: "stale_data" });
+      this.onLog("warn", "evaluation_skipped", {
+        market: marketKey,
+        reason: "stale_data",
+      });
       return;
     }
 
@@ -175,7 +263,7 @@ export class StrategyEngine {
     }
 
     // Calculate spreads and edge
-    const decision = this.calculateDecision(lbankTicker, uniswapQuote);
+    const decision = this.calculateDecision(cexTicker, uniswapQuote);
 
     // Store decision in state
     this.state[marketKey].decision = decision;
@@ -193,21 +281,22 @@ export class StrategyEngine {
   }
 
   private calculateDecision(
-    ticker: LBankTickerEvent,
+    ticker: CexTickerEvent,
     quote: UniswapQuoteResult
   ): StrategyDecision {
     const now = new Date().toISOString();
     const uniswapPrice = quote.effective_price_usdt;
-    const lbankBid = ticker.bid;
-    const lbankAsk = ticker.ask;
+    const cexBid = ticker.bid;
+    const cexAsk = ticker.ask;
+    const cexSource = ticker.type === "lbank.ticker" ? "lbank" : "latoken";
 
     // Calculate spreads in basis points
     // Scenario 1: Buy on CEX (at ask), sell on DEX
-    const spreadBuyCexSellDex = ((uniswapPrice - lbankAsk) / lbankAsk) * 10000;
+    const spreadBuyCexSellDex = ((uniswapPrice - cexAsk) / cexAsk) * 10000;
 
     // Scenario 2: Buy on DEX, sell on CEX (at bid)
     const spreadBuyDexSellCex =
-      ((lbankBid - uniswapPrice) / uniswapPrice) * 10000;
+      ((cexBid - uniswapPrice) / uniswapPrice) * 10000;
 
     // Determine best direction
     let rawSpreadBps: number;
@@ -231,9 +320,11 @@ export class StrategyEngine {
     // 2. DEX LP fee (Uniswap pool fee)
     const dexFeeBps = this.config.DEX_LP_FEE_BPS;
 
-    // 3. Gas cost as basis points of trade size
+    // 3. Gas cost - use real-time from quote if available, else config default
+    const realTimeGasCostUsdt =
+      quote.gas_cost_usdt ?? this.config.GAS_COST_USDT;
     const gasCostBps =
-      (this.config.GAS_COST_USDT / this.config.QUOTE_SIZE_USDT) * 10000;
+      (realTimeGasCostUsdt / this.config.QUOTE_SIZE_USDT) * 10000;
 
     // 4. Network/withdrawal fee as basis points of trade size
     const networkFeeBps =
@@ -245,6 +336,15 @@ export class StrategyEngine {
     // Total estimated cost
     const estimatedCostBps =
       cexFeeBps + dexFeeBps + gasCostBps + networkFeeBps + slippageBps;
+
+    // Cost breakdown for transparency
+    const costBreakdown = {
+      cex_fee_bps: Math.round(cexFeeBps * 100) / 100,
+      dex_lp_fee_bps: Math.round(dexFeeBps * 100) / 100,
+      gas_cost_bps: Math.round(gasCostBps * 100) / 100,
+      network_fee_bps: Math.round(networkFeeBps * 100) / 100,
+      slippage_bps: Math.round(slippageBps * 100) / 100,
+    };
     const edgeAfterCostsBps = rawSpreadBps - estimatedCostBps;
 
     // Determine if we would trade
@@ -278,11 +378,12 @@ export class StrategyEngine {
       type: "strategy.decision",
       ts: now,
       symbol: ticker.symbol,
-      lbank_bid: lbankBid,
-      lbank_ask: lbankAsk,
+      lbank_bid: cexBid,
+      lbank_ask: cexAsk,
       uniswap_price: uniswapPrice,
       raw_spread_bps: Math.round(rawSpreadBps * 100) / 100,
-      estimated_cost_bps: estimatedCostBps,
+      estimated_cost_bps: Math.round(estimatedCostBps * 100) / 100,
+      cost_breakdown: costBreakdown,
       edge_after_costs_bps: Math.round(edgeAfterCostsBps * 100) / 100,
       would_trade: wouldTrade,
       direction,
