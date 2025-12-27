@@ -9,27 +9,45 @@ import {
 // Strategy Engine
 // DRY-RUN ONLY: Computes edge after costs and logs decisions
 // Per architecture.md: never executes trades in MVP
+// Supports multiple markets: CSR/USDT and CSR25/USDT
 // ============================================================================
 
 type LogFn = (level: string, event: string, data?: Record<string, unknown>) => void;
 
-export interface MarketState {
+export interface SingleMarketState {
   lbankTicker: LBankTickerEvent | null;
   uniswapQuote: UniswapQuoteResult | null;
   lastLbankUpdate: string | null;
   lastUniswapUpdate: string | null;
+  decision: StrategyDecision | null;
+}
+
+export interface MarketState {
+  csr_usdt: SingleMarketState;
+  csr25_usdt: SingleMarketState;
 }
 
 export class StrategyEngine {
   private readonly config: Config;
   private readonly onLog: LogFn;
   private readonly onDecision: (decision: StrategyDecision) => void;
+  private readonly symbols: string[];
   
   private state: MarketState = {
-    lbankTicker: null,
-    uniswapQuote: null,
-    lastLbankUpdate: null,
-    lastUniswapUpdate: null,
+    csr_usdt: {
+      lbankTicker: null,
+      uniswapQuote: null,
+      lastLbankUpdate: null,
+      lastUniswapUpdate: null,
+      decision: null,
+    },
+    csr25_usdt: {
+      lbankTicker: null,
+      uniswapQuote: null,
+      lastLbankUpdate: null,
+      lastUniswapUpdate: null,
+      decision: null,
+    },
   };
 
   constructor(
@@ -40,82 +58,97 @@ export class StrategyEngine {
     this.config = config;
     this.onLog = onLog;
     this.onDecision = onDecision;
+    this.symbols = config.SYMBOLS.split(',').map(s => s.trim().toLowerCase());
   }
 
   // Update LBank ticker data
   updateLBankTicker(ticker: LBankTickerEvent): void {
-    // Filter by configured symbol
-    if (ticker.symbol.toLowerCase() !== this.config.SYMBOL.toLowerCase()) {
+    const symbol = ticker.symbol.toLowerCase();
+    
+    // Check if this is a symbol we're tracking
+    if (!this.symbols.includes(symbol)) {
       return;
     }
 
-    this.state.lbankTicker = ticker;
-    this.state.lastLbankUpdate = new Date().toISOString();
-    
-    this.onLog('debug', 'lbank_ticker_updated', {
-      symbol: ticker.symbol,
-      bid: ticker.bid,
-      ask: ticker.ask,
-    });
+    // Update the appropriate market state
+    const marketKey = symbol as keyof MarketState;
+    if (this.state[marketKey]) {
+      this.state[marketKey].lbankTicker = ticker;
+      this.state[marketKey].lastLbankUpdate = new Date().toISOString();
+      
+      this.onLog('debug', 'lbank_ticker_updated', {
+        symbol: ticker.symbol,
+        bid: ticker.bid,
+        ask: ticker.ask,
+      });
 
-    // Evaluate strategy on each ticker update
-    this.evaluate();
+      // Evaluate strategy for this market
+      this.evaluateMarket(marketKey);
+    }
   }
 
   // Update Uniswap quote data
-  updateUniswapQuote(quote: UniswapQuoteResult): void {
-    this.state.uniswapQuote = quote;
-    this.state.lastUniswapUpdate = new Date().toISOString();
+  updateUniswapQuote(quote: UniswapQuoteResult, symbol: string): void {
+    const marketKey = symbol.toLowerCase() as keyof MarketState;
     
-    this.onLog('debug', 'uniswap_quote_updated', {
-      pair: quote.pair,
-      effectivePrice: quote.effective_price_usdt,
-      isStale: quote.is_stale,
-    });
+    if (this.state[marketKey]) {
+      this.state[marketKey].uniswapQuote = quote;
+      this.state[marketKey].lastUniswapUpdate = new Date().toISOString();
+      
+      this.onLog('debug', 'uniswap_quote_updated', {
+        symbol,
+        pair: quote.pair,
+        effectivePrice: quote.effective_price_usdt,
+        isStale: quote.is_stale,
+      });
 
-    // Evaluate strategy on each quote update
-    this.evaluate();
+      // Evaluate strategy for this market
+      this.evaluateMarket(marketKey);
+    }
   }
 
   // Get current market state (for health endpoint)
   getState(): MarketState {
-    return { ...this.state };
+    return JSON.parse(JSON.stringify(this.state));
   }
 
-  // Check if data is stale
-  isDataStale(): boolean {
+  // Check if market data is stale
+  isMarketDataStale(marketKey: keyof MarketState): boolean {
     const now = Date.now();
     const maxStaleMs = this.config.MAX_STALENESS_SECONDS * 1000;
+    const market = this.state[marketKey];
 
-    if (!this.state.lastLbankUpdate || !this.state.lastUniswapUpdate) {
+    if (!market.lastLbankUpdate || !market.lastUniswapUpdate) {
       return true;
     }
 
-    const lbankAge = now - new Date(this.state.lastLbankUpdate).getTime();
-    const uniswapAge = now - new Date(this.state.lastUniswapUpdate).getTime();
+    const lbankAge = now - new Date(market.lastLbankUpdate).getTime();
+    const uniswapAge = now - new Date(market.lastUniswapUpdate).getTime();
 
     return lbankAge > maxStaleMs || uniswapAge > maxStaleMs;
   }
 
-  // Main evaluation logic
-  private evaluate(): void {
-    const { lbankTicker, uniswapQuote } = this.state;
+  // Main evaluation logic for a specific market
+  private evaluateMarket(marketKey: keyof MarketState): void {
+    const market = this.state[marketKey];
+    const { lbankTicker, uniswapQuote } = market;
 
     // Need both data sources
     if (!lbankTicker || !uniswapQuote) {
-      this.onLog("debug", "evaluation_skipped", { reason: "incomplete_data" });
+      this.onLog("debug", "evaluation_skipped", { market: marketKey, reason: "incomplete_data" });
       return;
     }
 
     // Check for stale data
-    if (this.isDataStale()) {
-      this.onLog("warn", "evaluation_skipped", { reason: "stale_data" });
+    if (this.isMarketDataStale(marketKey)) {
+      this.onLog("warn", "evaluation_skipped", { market: marketKey, reason: "stale_data" });
       return;
     }
 
     // Check for quote errors
     if (uniswapQuote.error) {
       this.onLog("warn", "evaluation_skipped", {
+        market: marketKey,
         reason: "quote_error",
         error: uniswapQuote.error,
       });
@@ -125,14 +158,16 @@ export class StrategyEngine {
     // Check if quote is validated
     if (uniswapQuote.validated === false) {
       this.onLog("warn", "strategy.skipped", {
+        market: marketKey,
         reason: "invalid_or_unvalidated_quote",
       });
       return;
     }
 
-    // Check if quote is from real on-chain data
-    if (uniswapQuote.source !== "uniswap_v4_pool_state") {
+    // Check if quote is from real data source
+    if (!uniswapQuote.source?.startsWith("uniswap_v4")) {
       this.onLog("warn", "strategy.skipped", {
+        market: marketKey,
         reason: "non_real_or_invalid_uniswap_quote",
         source: uniswapQuote.source,
       });
@@ -142,8 +177,12 @@ export class StrategyEngine {
     // Calculate spreads and edge
     const decision = this.calculateDecision(lbankTicker, uniswapQuote);
 
+    // Store decision in state
+    this.state[marketKey].decision = decision;
+
     // Log and emit decision
     this.onLog("info", "strategy_decision", {
+      market: marketKey,
       would_trade: decision.would_trade,
       direction: decision.direction,
       edge_bps: decision.edge_after_costs_bps,
@@ -164,11 +203,9 @@ export class StrategyEngine {
 
     // Calculate spreads in basis points
     // Scenario 1: Buy on CEX (at ask), sell on DEX
-    // Profit if DEX price > CEX ask
     const spreadBuyCexSellDex = ((uniswapPrice - lbankAsk) / lbankAsk) * 10000;
 
     // Scenario 2: Buy on DEX, sell on CEX (at bid)
-    // Profit if CEX bid > DEX price
     const spreadBuyDexSellCex = ((lbankBid - uniswapPrice) / uniswapPrice) * 10000;
 
     // Determine best direction
@@ -196,7 +233,6 @@ export class StrategyEngine {
     // Calculate suggested size (bounded by max)
     let suggestedSize = 0;
     if (wouldTrade) {
-      // Simple sizing: use configured quote size, bounded by max
       suggestedSize = Math.min(this.config.QUOTE_SIZE_USDT, this.config.MAX_TRADE_SIZE_USDT);
     }
 

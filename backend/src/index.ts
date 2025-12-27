@@ -32,13 +32,18 @@ interface ServiceHealth {
   errors_last_5m: number;
 }
 
+interface MarketData {
+  lbank_ticker?: any;
+  uniswap_quote?: any;
+  decision?: any;
+}
+
 interface DashboardData {
   ts: string;
   market_state?: {
     ts: string;
-    lbank_ticker?: any;
-    uniswap_quote_csr25?: any;
-    uniswap_quote_csr?: any;
+    csr_usdt: MarketData;
+    csr25_usdt: MarketData;
     is_stale: boolean;
   };
   decision?: any;
@@ -217,41 +222,18 @@ async function fetchServiceData() {
       };
     }
 
-    // Build market state with quotes from both services
-    let uniswapQuoteCSR25: any = null;
-    let uniswapQuoteCSR: any = null;
-
-    try {
-      const resp = await httpClient.post(`${UNISWAP_QUOTE_URL}/quote`, {
-        amount_usdt: 1000,
-        direction: "buy",
-      });
-      uniswapQuoteCSR25 = resp.data;
-    } catch {
-      // Ignore errors
-    }
-
-    try {
-      const resp = await httpClient.post(`${UNISWAP_QUOTE_CSR_URL}/quote`, {
-        amount_usdt: 1000,
-        direction: "buy",
-      });
-      uniswapQuoteCSR = resp.data;
-    } catch {
-      // Ignore errors
-    }
-
+    // Fetch market state from strategy engine (includes both markets)
     try {
       const resp = await httpClient.get(`${STRATEGY_ENGINE_URL}/state`);
       marketState = resp.data;
     } catch {
-      // Ignore errors
-    }
-
-    // Update market state with both quotes
-    if (marketState) {
-      marketState.uniswap_quote_csr25 = uniswapQuoteCSR25;
-      marketState.uniswap_quote_csr = uniswapQuoteCSR;
+      // Use default structure if strategy engine is down
+      marketState = {
+        ts: now,
+        csr_usdt: { lbank_ticker: null, uniswap_quote: null, decision: null },
+        csr25_usdt: { lbank_ticker: null, uniswap_quote: null, decision: null },
+        is_stale: true,
+      };
     }
 
     try {
@@ -278,6 +260,15 @@ async function fetchServiceData() {
       overall = "degraded";
     }
 
+    // Build opportunities from both markets
+    const opportunities: any[] = [];
+    if (decision?.csr_usdt?.would_trade) {
+      opportunities.push(decision.csr_usdt);
+    }
+    if (decision?.csr25_usdt?.would_trade) {
+      opportunities.push(decision.csr25_usdt);
+    }
+
     // Update dashboard data
     dashboardData = {
       ts: now,
@@ -291,7 +282,7 @@ async function fetchServiceData() {
         strategy_engine: strategyHealth,
         overall_status: overall,
       },
-      opportunities: decision && decision.would_trade ? [decision] : [],
+      opportunities,
     };
 
     // Broadcast to WebSocket clients

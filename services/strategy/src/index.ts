@@ -10,15 +10,14 @@ import {
     StrategyDecision,
     UniswapQuoteResultSchema,
 } from './schemas';
-import { StrategyEngine } from './strategyEngine';
+import { StrategyEngine, MarketState } from './strategyEngine';
 
 // ============================================================================
 // Strategy Engine Service
 // DRY-RUN ONLY: Monitors spreads and logs decisions
-// Per agents.md: never executes trades in MVP, only logs decisions
+// Supports multiple markets: CSR/USDT and CSR25/USDT
 // ============================================================================
 
-// Structured logger
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 const LOG_LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 
@@ -40,24 +39,27 @@ function log(level: LogLevel, event: string, data?: Record<string, unknown>): vo
   else console.log(output);
 }
 
-// Track decisions for dashboard/metrics
-let lastDecision: StrategyDecision | null = null;
+// Track decisions per market
+const lastDecisions: Record<string, StrategyDecision | null> = {
+  csr_usdt: null,
+  csr25_usdt: null,
+};
 let decisionCount = 0;
 let wouldTradeCount = 0;
 
 async function main(): Promise<void> {
   log('info', 'starting', { version: '1.0.0', mode: 'DRY_RUN_ONLY' });
 
-  // Load and validate config
   const config = loadConfig();
   
   log('info', 'config_loaded', {
-    symbol: config.SYMBOL,
+    symbols: config.SYMBOLS,
     minEdgeBps: config.MIN_EDGE_BPS,
     estimatedCostBps: config.ESTIMATED_COST_BPS,
     quoteSizeUsdt: config.QUOTE_SIZE_USDT,
     lbankGateway: config.LBANK_GATEWAY_WS_URL,
-    uniswapQuoteUrl: config.UNISWAP_QUOTE_URL,
+    uniswapQuoteUrlCSR25: config.UNISWAP_QUOTE_URL,
+    uniswapQuoteUrlCSR: config.UNISWAP_QUOTE_CSR_URL,
   });
 
   // Initialize strategy engine
@@ -65,12 +67,12 @@ async function main(): Promise<void> {
     config,
     (level, event, data) => log(level as LogLevel, event, data),
     (decision) => {
-      lastDecision = decision;
+      lastDecisions[decision.symbol.toLowerCase()] = decision;
       decisionCount++;
       if (decision.would_trade) {
         wouldTradeCount++;
-        // IMPORTANT: DRY-RUN ONLY - Log but do not execute
         log('info', 'DRY_RUN_WOULD_TRADE', {
+          symbol: decision.symbol,
           direction: decision.direction,
           size: decision.suggested_size_usdt,
           edge_bps: decision.edge_after_costs_bps,
@@ -98,7 +100,6 @@ async function main(): Promise<void> {
       try {
         const parsed = JSON.parse(data.toString());
         
-        // Try to parse as ticker event
         const tickerResult = LBankTickerEventSchema.safeParse(parsed);
         if (tickerResult.success) {
           engine.updateLBankTicker(tickerResult.data);
@@ -125,13 +126,12 @@ async function main(): Promise<void> {
     setTimeout(connectLBankGateway, delay);
   }
 
-  // Connect to LBank Gateway
   connectLBankGateway();
 
-  // Poll Uniswap Quote Service
-  async function pollUniswapQuote(): Promise<void> {
+  // Poll Uniswap Quote Services for both markets
+  async function pollUniswapQuote(url: string, symbol: string): Promise<void> {
     try {
-      const response = await fetch(`${config.UNISWAP_QUOTE_URL}/quote`, {
+      const response = await fetch(`${url}/quote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -148,24 +148,30 @@ async function main(): Promise<void> {
       const quoteResult = UniswapQuoteResultSchema.safeParse(data);
       
       if (quoteResult.success) {
-        engine.updateUniswapQuote(quoteResult.data);
+        engine.updateUniswapQuote(quoteResult.data, symbol);
       } else {
-        log('warn', 'invalid_quote_response', { errors: quoteResult.error.format() });
+        log('warn', 'invalid_quote_response', { symbol, errors: quoteResult.error.format() });
       }
     } catch (err) {
-      log('error', 'uniswap_quote_fetch_error', { error: String(err) });
+      log('error', 'uniswap_quote_fetch_error', { symbol, error: String(err) });
     }
   }
 
-  // Start polling Uniswap quotes
-  setInterval(pollUniswapQuote, config.UNISWAP_POLL_INTERVAL_MS);
-  pollUniswapQuote(); // Initial fetch
+  // Poll both quote services
+  async function pollAllQuotes(): Promise<void> {
+    await Promise.all([
+      pollUniswapQuote(config.UNISWAP_QUOTE_URL, 'csr25_usdt'),
+      pollUniswapQuote(config.UNISWAP_QUOTE_CSR_URL, 'csr_usdt'),
+    ]);
+  }
 
-  // Create HTTP server for health endpoints
+  setInterval(pollAllQuotes, config.UNISWAP_POLL_INTERVAL_MS);
+  pollAllQuotes();
+
+  // Create HTTP server
   const app = express();
   app.use(express.json());
 
-  // Health check - basic liveness
   app.get('/health', (_req: Request, res: Response) => {
     res.json({ 
       status: 'ok', 
@@ -175,16 +181,17 @@ async function main(): Promise<void> {
     });
   });
 
-  // Ready check - detailed health
   app.get('/ready', (_req: Request, res: Response) => {
     const state = engine.getState();
-    const isStale = engine.isDataStale();
     const wsConnected = ws?.readyState === WebSocket.OPEN;
 
+    const csrHasData = !!state.csr_usdt.lbankTicker && !!state.csr_usdt.uniswapQuote;
+    const csr25HasData = !!state.csr25_usdt.lbankTicker && !!state.csr25_usdt.uniswapQuote;
+
     let status: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
-    if (!wsConnected || !state.lbankTicker || !state.uniswapQuote) {
+    if (!wsConnected || (!csrHasData && !csr25HasData)) {
       status = 'unhealthy';
-    } else if (isStale) {
+    } else if (!csrHasData || !csr25HasData) {
       status = 'degraded';
     }
 
@@ -194,11 +201,20 @@ async function main(): Promise<void> {
       status,
       ts: new Date().toISOString(),
       ws_connected: wsConnected,
-      has_lbank_data: !!state.lbankTicker,
-      has_uniswap_data: !!state.uniswapQuote,
-      is_data_stale: isStale,
-      last_lbank_update: state.lastLbankUpdate,
-      last_uniswap_update: state.lastUniswapUpdate,
+      markets: {
+        csr_usdt: {
+          has_lbank_data: !!state.csr_usdt.lbankTicker,
+          has_uniswap_data: !!state.csr_usdt.uniswapQuote,
+          last_lbank_update: state.csr_usdt.lastLbankUpdate,
+          last_uniswap_update: state.csr_usdt.lastUniswapUpdate,
+        },
+        csr25_usdt: {
+          has_lbank_data: !!state.csr25_usdt.lbankTicker,
+          has_uniswap_data: !!state.csr25_usdt.uniswapQuote,
+          last_lbank_update: state.csr25_usdt.lastLbankUpdate,
+          last_uniswap_update: state.csr25_usdt.lastUniswapUpdate,
+        },
+      },
       decision_count: decisionCount,
       would_trade_count: wouldTradeCount,
     };
@@ -207,32 +223,34 @@ async function main(): Promise<void> {
     res.status(httpStatus).json(health);
   });
 
-  // Get last decision
   app.get('/decision', (_req: Request, res: Response) => {
-    if (!lastDecision) {
-      res.status(404).json({ error: 'No decision yet' });
-      return;
-    }
-    res.json(lastDecision);
+    res.json({
+      csr_usdt: lastDecisions.csr_usdt,
+      csr25_usdt: lastDecisions.csr25_usdt,
+    });
   });
 
-  // Get current state
   app.get('/state', (_req: Request, res: Response) => {
     const state = engine.getState();
     res.json({
       ts: new Date().toISOString(),
-      lbank_ticker: state.lbankTicker,
-      uniswap_quote: state.uniswapQuote,
-      is_stale: engine.isDataStale(),
+      csr_usdt: {
+        lbank_ticker: state.csr_usdt.lbankTicker,
+        uniswap_quote: state.csr_usdt.uniswapQuote,
+        decision: state.csr_usdt.decision,
+      },
+      csr25_usdt: {
+        lbank_ticker: state.csr25_usdt.lbankTicker,
+        uniswap_quote: state.csr25_usdt.uniswapQuote,
+        decision: state.csr25_usdt.decision,
+      },
     });
   });
 
-  // Start server
   app.listen(config.HTTP_PORT, () => {
     log('info', 'server_started', { port: config.HTTP_PORT, mode: 'DRY_RUN_ONLY' });
   });
 
-  // Graceful shutdown
   process.on('SIGTERM', () => {
     log('info', 'sigterm_received', { message: 'Shutting down' });
     ws?.close();

@@ -15,8 +15,11 @@ const ConfigSchema = z.object({
   // Uniswap Quote Service URL (internal)
   UNISWAP_QUOTE_URL: z.string().url().default("http://localhost:3002"),
 
-  // Symbol to monitor
-  SYMBOL: z.string().default("csr_usdt"),
+  // Symbols to monitor (comma-separated)
+  SYMBOLS: z.string().default("csr_usdt,csr25_usdt"),
+
+  // Uniswap Quote Service URL for CSR
+  UNISWAP_QUOTE_CSR_URL: z.string().url().default("http://localhost:3005"),
 
   // Quote size for Uniswap (in USDT)
   QUOTE_SIZE_USDT: z.coerce.number().positive().default(1000),
@@ -51,7 +54,8 @@ export function loadConfig(): Config {
     EXECUTION_MODE: process.env.EXECUTION_MODE,
     LBANK_GATEWAY_WS_URL: process.env.LBANK_GATEWAY_WS_URL,
     UNISWAP_QUOTE_URL: process.env.UNISWAP_QUOTE_URL,
-    SYMBOL: process.env.SYMBOL,
+    SYMBOLS: process.env.SYMBOLS,
+    UNISWAP_QUOTE_CSR_URL: process.env.UNISWAP_QUOTE_CSR_URL,
     QUOTE_SIZE_USDT: process.env.QUOTE_SIZE_USDT,
     MIN_EDGE_BPS: process.env.MIN_EDGE_BPS,
     ESTIMATED_COST_BPS: process.env.ESTIMATED_COST_BPS,
