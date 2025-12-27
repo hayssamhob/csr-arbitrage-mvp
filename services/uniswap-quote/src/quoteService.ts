@@ -23,6 +23,8 @@ export class QuoteService {
   private cache: Map<string, CachedQuote> = new Map();
   private consecutiveFailures = 0;
   private readonly onLog: LogFn;
+  private mockMode: boolean;
+  private mockPrice: number;
 
   constructor(config: Config, onLog: LogFn) {
     this.chainId = config.CHAIN_ID;
@@ -32,23 +34,31 @@ export class QuoteService {
       10000
     );
     this.onLog = onLog;
+    this.mockMode = config.MOCK_MODE;
+    this.mockPrice = config.MOCK_CSR_PRICE_USDT;
 
-    // Initialize provider
-    this.provider = new ethers.providers.JsonRpcProvider(config.RPC_URL);
+    if (!this.mockMode) {
+      // Initialize provider
+      this.provider = new ethers.providers.JsonRpcProvider(config.RPC_URL);
+
+      // Initialize AlphaRouter
+      // Per docs.md: Use Smart Order Router for effective execution price
+      this.router = new AlphaRouter({
+        chainId: this.chainId,
+        provider: this.provider,
+      });
+    }
 
     // Initialize tokens from config
     // Per agents.md: token addresses must come from config, not hardcoded
     this.tokenIn = this.createToken(config.TOKEN_IN_CONFIG);
     this.tokenOut = this.createToken(config.TOKEN_OUT_CONFIG);
 
-    // Initialize AlphaRouter
-    // Per docs.md: Use Smart Order Router for effective execution price
-    this.router = new AlphaRouter({
-      chainId: this.chainId,
-      provider: this.provider,
-    });
+    if (this.mockMode) {
+      this.onLog("info", "mock_mode_enabled", { mockPrice: this.mockPrice });
+    }
 
-    this.onLog('info', 'quote_service_initialized', {
+    this.onLog("info", "quote_service_initialized", {
       chainId: this.chainId,
       tokenIn: config.TOKEN_IN_CONFIG.symbol,
       tokenOut: config.TOKEN_OUT_CONFIG.symbol,
@@ -65,32 +75,38 @@ export class QuoteService {
     );
   }
 
-  async getQuote(amountUsdt: number, direction: 'buy' | 'sell' = 'buy'): Promise<UniswapQuoteResult> {
+  async getQuote(
+    amountUsdt: number,
+    direction: "buy" | "sell" = "buy"
+  ): Promise<UniswapQuoteResult> {
     const cacheKey = `${direction}-${amountUsdt}`;
-    
+
     // Check cache first
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.cachedAt < this.cacheTtlMs) {
-      this.onLog('debug', 'cache_hit', { cacheKey, age_ms: Date.now() - cached.cachedAt });
+      this.onLog("debug", "cache_hit", {
+        cacheKey,
+        age_ms: Date.now() - cached.cachedAt,
+      });
       return { ...cached.quote, is_stale: false };
     }
 
     try {
       const quote = await this.fetchQuote(amountUsdt, direction);
-      
+
       // Cache the result
       this.cache.set(cacheKey, {
         quote,
         cachedAt: Date.now(),
       });
-      
+
       this.consecutiveFailures = 0;
       return quote;
     } catch (error) {
       this.consecutiveFailures++;
       const errorMsg = error instanceof Error ? error.message : String(error);
-      
-      this.onLog('error', 'quote_fetch_failed', {
+
+      this.onLog("error", "quote_fetch_failed", {
         error: errorMsg,
         consecutiveFailures: this.consecutiveFailures,
         amountUsdt,
@@ -99,20 +115,20 @@ export class QuoteService {
 
       // Return stale cached data if available
       if (cached) {
-        this.onLog('warn', 'returning_stale_cache', { cacheKey });
+        this.onLog("warn", "returning_stale_cache", { cacheKey });
         return { ...cached.quote, is_stale: true };
       }
 
       // Return error result
       return {
-        type: 'uniswap.quote',
+        type: "uniswap.quote",
         pair: `${this.tokenOut.symbol}/${this.tokenIn.symbol}`,
         chain_id: this.chainId,
         ts: new Date().toISOString(),
         amount_in: amountUsdt.toString(),
-        amount_in_unit: this.tokenIn.symbol || 'USDT',
-        amount_out: '0',
-        amount_out_unit: this.tokenOut.symbol || 'TOKEN',
+        amount_in_unit: this.tokenIn.symbol || "USDT",
+        amount_out: "0",
+        amount_out_unit: this.tokenOut.symbol || "TOKEN",
         effective_price_usdt: 0,
         estimated_gas: 0,
         error: errorMsg,
@@ -121,14 +137,53 @@ export class QuoteService {
     }
   }
 
-  private async fetchQuote(amountUsdt: number, direction: 'buy' | 'sell'): Promise<UniswapQuoteResult> {
+  private async fetchQuote(
+    amountUsdt: number,
+    direction: "buy" | "sell"
+  ): Promise<UniswapQuoteResult> {
     const now = new Date().toISOString();
-    
+
+    // Handle mock mode
+    if (this.mockMode) {
+      this.onLog("debug", "mock_quote", { amountUsdt, direction });
+
+      // Simulate quote with mock price
+      const outputAmount =
+        direction === "buy"
+          ? amountUsdt / this.mockPrice // USDT -> CSR
+          : amountUsdt * this.mockPrice; // CSR -> USDT
+
+      // Add small random variation to simulate market movement
+      const variation = 1 + (Math.random() - 0.5) * 0.002; // ±0.1%
+      const adjustedOutput = outputAmount * variation;
+
+      return {
+        type: "uniswap.quote",
+        pair: `${this.tokenOut.symbol}/${this.tokenIn.symbol}`,
+        chain_id: this.chainId,
+        ts: now,
+        amount_in: amountUsdt.toString(),
+        amount_in_unit: this.tokenIn.symbol || "USDT",
+        amount_out: adjustedOutput.toFixed(6),
+        amount_out_unit: this.tokenOut.symbol || "TOKEN",
+        effective_price_usdt:
+          direction === "buy"
+            ? this.mockPrice * variation
+            : this.mockPrice / variation,
+        estimated_gas: 150000, // Mock gas estimate
+        route: {
+          summary: "mock",
+          pools: ["mock"],
+        },
+        is_stale: false,
+      };
+    }
+
     // Determine input/output based on direction
     // buy = USDT -> token (user wants to buy token with USDT)
     // sell = token -> USDT (user wants to sell token for USDT)
-    const inputToken = direction === 'buy' ? this.tokenIn : this.tokenOut;
-    const outputToken = direction === 'buy' ? this.tokenOut : this.tokenIn;
+    const inputToken = direction === "buy" ? this.tokenIn : this.tokenOut;
+    const outputToken = direction === "buy" ? this.tokenOut : this.tokenIn;
 
     // Convert amount to wei/smallest unit
     const amountInWei = ethers.utils.parseUnits(
@@ -141,7 +196,7 @@ export class QuoteService {
       amountInWei.toString()
     );
 
-    this.onLog('debug', 'fetching_quote', {
+    this.onLog("debug", "fetching_quote", {
       direction,
       amountUsdt,
       inputToken: inputToken.symbol,
@@ -163,7 +218,7 @@ export class QuoteService {
     );
 
     if (!route) {
-      throw new Error('No route found');
+      throw new Error("No route found");
     }
 
     const outputAmount = route.quote.toExact();
@@ -173,31 +228,33 @@ export class QuoteService {
     // For buy: effective_price = amountUsdt / outputAmount (USDT per token)
     // For sell: effective_price = outputAmount / amountUsdt (USDT per token)
     let effectivePrice: number;
-    if (direction === 'buy') {
+    if (direction === "buy") {
       effectivePrice = amountUsdt / parseFloat(outputAmount);
     } else {
       effectivePrice = parseFloat(outputAmount) / amountUsdt;
     }
 
     const result: UniswapQuoteResult = {
-      type: 'uniswap.quote',
+      type: "uniswap.quote",
       pair: `${this.tokenOut.symbol}/${this.tokenIn.symbol}`,
       chain_id: this.chainId,
       ts: now,
       amount_in: amountUsdt.toString(),
-      amount_in_unit: inputToken.symbol || 'TOKEN',
+      amount_in_unit: inputToken.symbol || "TOKEN",
       amount_out: outputAmount,
-      amount_out_unit: outputToken.symbol || 'TOKEN',
+      amount_out_unit: outputToken.symbol || "TOKEN",
       effective_price_usdt: effectivePrice,
       estimated_gas: gasEstimate,
       route: {
-        summary: route.routeString || 'direct',
-        pools: route.route.map((r) => r.tokenPath.map((t) => t.symbol).join(' -> ')),
+        summary: route.routeString || "direct",
+        pools: route.route.map((r) =>
+          r.tokenPath.map((t) => t.symbol).join(" -> ")
+        ),
       },
       is_stale: false,
     };
 
-    this.onLog('info', 'quote_fetched', {
+    this.onLog("info", "quote_fetched", {
       pair: result.pair,
       amountIn: result.amount_in,
       amountOut: result.amount_out,

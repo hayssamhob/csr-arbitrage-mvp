@@ -14,45 +14,46 @@ const TokenConfigSchema = z.object({
 const ConfigSchema = z.object({
   // Chain configuration
   CHAIN_ID: z.coerce.number().int().positive().default(1), // Mainnet default
-  
+
   // RPC URL (required - no default to prevent accidental misconfiguration)
   RPC_URL: z.string().url(),
-  
-  // Token configurations (JSON strings)
-  // Example: {"address":"0x...","decimals":18,"symbol":"CSR"}
-  TOKEN_IN_CONFIG: z.string().transform((val) => {
-    try {
-      return TokenConfigSchema.parse(JSON.parse(val));
-    } catch {
-      throw new Error('Invalid TOKEN_IN_CONFIG JSON');
-    }
-  }),
-  
-  TOKEN_OUT_CONFIG: z.string().transform((val) => {
-    try {
-      return TokenConfigSchema.parse(JSON.parse(val));
-    } catch {
-      throw new Error('Invalid TOKEN_OUT_CONFIG JSON');
-    }
-  }),
-  
+
+  // Token configurations as JSON strings
+  TOKEN_IN_CONFIG: z
+    .string()
+    .transform((str) => JSON.parse(str))
+    .pipe(TokenConfigSchema),
+  TOKEN_OUT_CONFIG: z
+    .string()
+    .transform((str) => JSON.parse(str))
+    .pipe(TokenConfigSchema),
+
   // Quote sizes in USDT (comma-separated)
-  QUOTE_SIZES_USDT: z.string().default('100,500,1000'),
-  
+  QUOTE_SIZES_USDT: z.string().default("100,500,1000"),
+
   // Cache TTL in seconds
   QUOTE_CACHE_TTL_SECONDS: z.coerce.number().positive().default(30),
-  
-  // HTTP port for health and quote endpoints
+
+  // HTTP port for API
   HTTP_PORT: z.coerce.number().int().positive().default(3002),
-  
-  // Max staleness for cached quotes
+
+  // Max staleness threshold in seconds
   MAX_STALENESS_SECONDS: z.coerce.number().positive().default(60),
-  
+
   // Slippage tolerance (as percentage, e.g., 0.5 = 0.5%)
   SLIPPAGE_TOLERANCE_PERCENT: z.coerce.number().min(0).max(50).default(0.5),
-  
+
+  // Mock mode for testing
+  MOCK_MODE: z
+    .enum(["true", "false"])
+    .transform((val) => val === "true")
+    .default("false"),
+
+  // Mock price for CSR in USDT (when mock mode is enabled)
+  MOCK_CSR_PRICE_USDT: z.coerce.number().positive().default(0.0125),
+
   // Log level
-  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
 export type TokenConfig = z.infer<typeof TokenConfigSchema>;
@@ -69,13 +70,15 @@ export function loadConfig(): Config {
     HTTP_PORT: process.env.HTTP_PORT,
     MAX_STALENESS_SECONDS: process.env.MAX_STALENESS_SECONDS,
     SLIPPAGE_TOLERANCE_PERCENT: process.env.SLIPPAGE_TOLERANCE_PERCENT,
+    MOCK_MODE: process.env.MOCK_MODE,
+    MOCK_CSR_PRICE_USDT: process.env.MOCK_CSR_PRICE_USDT,
     LOG_LEVEL: process.env.LOG_LEVEL,
   };
 
   const result = ConfigSchema.safeParse(rawConfig);
-  
+
   if (!result.success) {
-    console.error('Configuration validation failed:');
+    console.error("Configuration validation failed:");
     console.error(result.error.format());
     process.exit(1);
   }

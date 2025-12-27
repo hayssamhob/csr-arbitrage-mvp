@@ -51,18 +51,24 @@ export const LBankSubscribeResponseSchema = z.object({
 });
 
 // Ticker data from LBank
-// ASSUMPTION: Format based on LBank V2 WebSocket docs
-// Fields may vary - logging raw messages for validation
+// Format validated against live LBank V2 WebSocket messages
+// Note: LBank returns numeric values, not strings
 export const RawLBankTickerSchema = z.object({
   tick: z.object({
-    latest: z.string(),
-    change: z.string(),
-    high: z.string(),
-    low: z.string(),
-    vol: z.string(),
-    turnover: z.string().optional(),
-    to_cny: z.string().optional(),
-    to_usd: z.string().optional(),
+    latest: z.union([z.string(), z.number()]).transform((v) => String(v)),
+    change: z.union([z.string(), z.number()]).transform((v) => String(v)),
+    high: z.union([z.string(), z.number()]).transform((v) => String(v)),
+    low: z.union([z.string(), z.number()]).transform((v) => String(v)),
+    vol: z.union([z.string(), z.number()]).transform((v) => String(v)),
+    turnover: z
+      .union([z.string(), z.number()])
+      .transform((v) => String(v))
+      .optional(),
+    to_cny: z.union([z.string(), z.number()]).optional(),
+    to_usd: z.union([z.string(), z.number()]).optional(),
+    usd: z.union([z.string(), z.number()]).optional(),
+    cny: z.union([z.string(), z.number()]).optional(),
+    dir: z.string().optional(),
   }),
   pair: z.string(),
   type: z.string(),
