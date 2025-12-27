@@ -24,6 +24,7 @@ export const UniswapQuoteResultSchema = z.object({
     .optional(),
   is_stale: z.boolean().optional(),
   validated: z.boolean().optional(),
+  source: z.string().optional(),
   error: z.string().optional(),
 });
 

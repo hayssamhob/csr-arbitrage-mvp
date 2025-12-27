@@ -38,19 +38,10 @@ const ConfigSchema = z.object({
   HTTP_PORT: z.coerce.number().int().positive().default(3002),
 
   // Max staleness threshold in seconds
-  MAX_STALENESS_SECONDS: z.coerce.number().positive().default(60),
+  MAX_STALENESS_SECONDS: z.coerce.number().positive().default(120),
 
   // Slippage tolerance (as percentage, e.g., 0.5 = 0.5%)
   SLIPPAGE_TOLERANCE_PERCENT: z.coerce.number().min(0).max(50).default(0.5),
-
-  // Mock mode for testing
-  MOCK_MODE: z
-    .enum(["true", "false"])
-    .transform((val) => val === "true")
-    .default("false"),
-
-  // Mock price for CSR in USDT (when mock mode is enabled)
-  MOCK_CSR_PRICE_USDT: z.coerce.number().positive().default(0.0125),
 
   // Log level
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
@@ -70,8 +61,6 @@ export function loadConfig(): Config {
     HTTP_PORT: process.env.HTTP_PORT,
     MAX_STALENESS_SECONDS: process.env.MAX_STALENESS_SECONDS,
     SLIPPAGE_TOLERANCE_PERCENT: process.env.SLIPPAGE_TOLERANCE_PERCENT,
-    MOCK_MODE: process.env.MOCK_MODE,
-    MOCK_CSR_PRICE_USDT: process.env.MOCK_CSR_PRICE_USDT,
     LOG_LEVEL: process.env.LOG_LEVEL,
   };
 

@@ -130,6 +130,15 @@ export class StrategyEngine {
       return;
     }
 
+    // Check if quote is from real on-chain data
+    if (uniswapQuote.source !== "uniswap_onchain") {
+      this.onLog("warn", "strategy.skipped", {
+        reason: "non_real_or_invalid_uniswap_quote",
+        source: uniswapQuote.source,
+      });
+      return;
+    }
+
     // Calculate spreads and edge
     const decision = this.calculateDecision(lbankTicker, uniswapQuote);
 
