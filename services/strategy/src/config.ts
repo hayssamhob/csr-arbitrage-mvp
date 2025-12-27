@@ -9,17 +9,14 @@ const ConfigSchema = z.object({
   // Execution mode: off (monitoring only), paper (simulate), live (execute)
   EXECUTION_MODE: z.enum(["off", "paper", "live"]).default("off"),
 
-  // LBank Gateway WebSocket URL (internal)
+  // WebSocket URLs
   LBANK_GATEWAY_WS_URL: z.string().url().default("ws://localhost:8080"),
-
-  // Uniswap Quote Service URL (internal)
+  LATOKEN_GATEWAY_WS_URL: z.string().url().default("ws://localhost:8081"),
   UNISWAP_QUOTE_URL: z.string().url().default("http://localhost:3002"),
+  UNISWAP_QUOTE_CSR_URL: z.string().url().default("http://localhost:3005"),
 
   // Symbols to monitor (comma-separated)
   SYMBOLS: z.string().default("csr_usdt,csr25_usdt"),
-
-  // Uniswap Quote Service URL for CSR
-  UNISWAP_QUOTE_CSR_URL: z.string().url().default("http://localhost:3005"),
 
   // Quote size for Uniswap (in USDT)
   QUOTE_SIZE_USDT: z.coerce.number().positive().default(1000),
@@ -67,6 +64,7 @@ export function loadConfig(): Config {
   const rawConfig = {
     EXECUTION_MODE: process.env.EXECUTION_MODE,
     LBANK_GATEWAY_WS_URL: process.env.LBANK_GATEWAY_WS_URL,
+    LATOKEN_GATEWAY_WS_URL: process.env.LATOKEN_GATEWAY_WS_URL,
     UNISWAP_QUOTE_URL: process.env.UNISWAP_QUOTE_URL,
     SYMBOLS: process.env.SYMBOLS,
     UNISWAP_QUOTE_CSR_URL: process.env.UNISWAP_QUOTE_CSR_URL,

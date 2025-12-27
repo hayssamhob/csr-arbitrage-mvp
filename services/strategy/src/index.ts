@@ -6,11 +6,12 @@ import fetch from 'node-fetch';
 import WebSocket from 'ws';
 import { loadConfig } from './config';
 import {
-    LBankTickerEventSchema,
-    StrategyDecision,
-    UniswapQuoteResultSchema,
-} from './schemas';
-import { StrategyEngine, MarketState } from './strategyEngine';
+  LatokenTickerEventSchema,
+  LBankTickerEventSchema,
+  StrategyDecision,
+  UniswapQuoteResultSchema,
+} from "./schemas";
+import { StrategyEngine } from "./strategyEngine";
 
 // ============================================================================
 // Strategy Engine Service
@@ -48,16 +49,16 @@ let decisionCount = 0;
 let wouldTradeCount = 0;
 
 async function main(): Promise<void> {
-  log('info', 'starting', { version: '1.0.0', mode: 'DRY_RUN_ONLY' });
+  log("info", "starting", { version: "1.0.0", mode: "DRY_RUN_ONLY" });
 
   const config = loadConfig();
-  
-  log('info', 'config_loaded', {
+
+  log("info", "config_loaded", {
     symbols: config.SYMBOLS,
     minEdgeBps: config.MIN_EDGE_BPS,
-    estimatedCostBps: config.ESTIMATED_COST_BPS,
     quoteSizeUsdt: config.QUOTE_SIZE_USDT,
     lbankGateway: config.LBANK_GATEWAY_WS_URL,
+    latokenGateway: config.LATOKEN_GATEWAY_WS_URL,
     uniswapQuoteUrlCSR25: config.UNISWAP_QUOTE_URL,
     uniswapQuoteUrlCSR: config.UNISWAP_QUOTE_CSR_URL,
   });
@@ -71,72 +72,133 @@ async function main(): Promise<void> {
       decisionCount++;
       if (decision.would_trade) {
         wouldTradeCount++;
-        log('info', 'DRY_RUN_WOULD_TRADE', {
+        log("info", "DRY_RUN_WOULD_TRADE", {
           symbol: decision.symbol,
           direction: decision.direction,
           size: decision.suggested_size_usdt,
           edge_bps: decision.edge_after_costs_bps,
-          note: 'NO EXECUTION - DRY RUN ONLY',
+          note: "NO EXECUTION - DRY RUN ONLY",
         });
       }
     }
   );
 
-  // Connect to LBank Gateway WebSocket
-  let ws: WebSocket | null = null;
-  let wsReconnectAttempts = 0;
+  // Connect to CEX Gateway WebSockets
+  let lbankWs: WebSocket | null = null;
+  let latokenWs: WebSocket | null = null;
+  let lbankReconnectAttempts = 0;
+  let latokenReconnectAttempts = 0;
 
   function connectLBankGateway(): void {
-    log('info', 'connecting_to_lbank_gateway', { url: config.LBANK_GATEWAY_WS_URL });
-    
-    ws = new WebSocket(config.LBANK_GATEWAY_WS_URL);
-
-    ws.on('open', () => {
-      log('info', 'lbank_gateway_connected');
-      wsReconnectAttempts = 0;
+    log("info", "connecting_to_lbank_gateway", {
+      url: config.LBANK_GATEWAY_WS_URL,
     });
 
-    ws.on('message', (data: WebSocket.RawData) => {
+    lbankWs = new WebSocket(config.LBANK_GATEWAY_WS_URL);
+
+    lbankWs.on("open", () => {
+      log("info", "lbank_gateway_connected");
+      lbankReconnectAttempts = 0;
+    });
+
+    lbankWs.on("message", (data: WebSocket.RawData) => {
       try {
         const parsed = JSON.parse(data.toString());
-        
+
         const tickerResult = LBankTickerEventSchema.safeParse(parsed);
         if (tickerResult.success) {
           engine.updateLBankTicker(tickerResult.data);
         }
       } catch (err) {
-        log('warn', 'ws_message_parse_error', { error: String(err) });
+        log("warn", "ws_message_parse_error", { error: String(err) });
       }
     });
 
-    ws.on('close', () => {
-      log('warn', 'lbank_gateway_disconnected');
-      scheduleReconnect();
+    lbankWs.on("close", () => {
+      log("warn", "lbank_gateway_disconnected");
+      scheduleLBankReconnect();
     });
 
-    ws.on('error', (err) => {
-      log('error', 'lbank_gateway_error', { error: err.message });
+    lbankWs.on("error", (err) => {
+      log("error", "lbank_gateway_error", { error: err.message });
     });
   }
 
-  function scheduleReconnect(): void {
-    wsReconnectAttempts++;
-    const delay = Math.min(5000 * Math.pow(1.5, wsReconnectAttempts - 1), 60000);
-    log('info', 'scheduling_reconnect', { attempt: wsReconnectAttempts, delayMs: delay });
+  function scheduleLBankReconnect(): void {
+    lbankReconnectAttempts++;
+    const delay = Math.min(
+      5000 * Math.pow(1.5, lbankReconnectAttempts - 1),
+      60000
+    );
+    log("info", "scheduling_lbank_reconnect", {
+      attempt: lbankReconnectAttempts,
+      delayMs: delay,
+    });
     setTimeout(connectLBankGateway, delay);
   }
 
+  // Connect to LATOKEN Gateway WebSocket
+  function connectLatokenGateway(): void {
+    log("info", "connecting_to_latoken_gateway", {
+      url: config.LATOKEN_GATEWAY_WS_URL,
+    });
+
+    latokenWs = new WebSocket(config.LATOKEN_GATEWAY_WS_URL);
+
+    latokenWs.on("open", () => {
+      log("info", "latoken_gateway_connected");
+      latokenReconnectAttempts = 0;
+    });
+
+    latokenWs.on("message", (data: WebSocket.RawData) => {
+      try {
+        const parsed = JSON.parse(data.toString());
+
+        const tickerResult = LatokenTickerEventSchema.safeParse(parsed);
+        if (tickerResult.success) {
+          engine.updateLatokenTicker(tickerResult.data);
+        }
+      } catch (err) {
+        log("warn", "latoken_ws_message_parse_error", { error: String(err) });
+      }
+    });
+
+    latokenWs.on("close", () => {
+      log("warn", "latoken_gateway_disconnected");
+      scheduleLatokenReconnect();
+    });
+
+    latokenWs.on("error", (err) => {
+      log("error", "latoken_gateway_error", { error: err.message });
+    });
+  }
+
+  function scheduleLatokenReconnect(): void {
+    latokenReconnectAttempts++;
+    const delay = Math.min(
+      5000 * Math.pow(1.5, latokenReconnectAttempts - 1),
+      60000
+    );
+    log("info", "scheduling_latoken_reconnect", {
+      attempt: latokenReconnectAttempts,
+      delayMs: delay,
+    });
+    setTimeout(connectLatokenGateway, delay);
+  }
+
+  // Start both connections
   connectLBankGateway();
+  connectLatokenGateway();
 
   // Poll Uniswap Quote Services for both markets
   async function pollUniswapQuote(url: string, symbol: string): Promise<void> {
     try {
       const response = await fetch(`${url}/quote`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount_usdt: config.QUOTE_SIZE_USDT,
-          direction: 'buy',
+          direction: "buy",
         }),
       });
 
@@ -146,22 +208,25 @@ async function main(): Promise<void> {
 
       const data = await response.json();
       const quoteResult = UniswapQuoteResultSchema.safeParse(data);
-      
+
       if (quoteResult.success) {
         engine.updateUniswapQuote(quoteResult.data, symbol);
       } else {
-        log('warn', 'invalid_quote_response', { symbol, errors: quoteResult.error.format() });
+        log("warn", "invalid_quote_response", {
+          symbol,
+          errors: quoteResult.error.format(),
+        });
       }
     } catch (err) {
-      log('error', 'uniswap_quote_fetch_error', { symbol, error: String(err) });
+      log("error", "uniswap_quote_fetch_error", { symbol, error: String(err) });
     }
   }
 
   // Poll both quote services
   async function pollAllQuotes(): Promise<void> {
     await Promise.all([
-      pollUniswapQuote(config.UNISWAP_QUOTE_URL, 'csr25_usdt'),
-      pollUniswapQuote(config.UNISWAP_QUOTE_CSR_URL, 'csr_usdt'),
+      pollUniswapQuote(config.UNISWAP_QUOTE_URL, "csr25_usdt"),
+      pollUniswapQuote(config.UNISWAP_QUOTE_CSR_URL, "csr_usdt"),
     ]);
   }
 
@@ -172,46 +237,55 @@ async function main(): Promise<void> {
   const app = express();
   app.use(express.json());
 
-  app.get('/health', (_req: Request, res: Response) => {
-    res.json({ 
-      status: 'ok', 
-      service: 'strategy', 
-      mode: 'DRY_RUN_ONLY',
-      ts: new Date().toISOString() 
+  app.get("/health", (_req: Request, res: Response) => {
+    res.json({
+      status: "ok",
+      service: "strategy",
+      mode: "DRY_RUN_ONLY",
+      ts: new Date().toISOString(),
     });
   });
 
-  app.get('/ready', (_req: Request, res: Response) => {
+  app.get("/ready", (_req: Request, res: Response) => {
     const state = engine.getState();
-    const wsConnected = ws?.readyState === WebSocket.OPEN;
+    const lbankWsConnected = lbankWs?.readyState === WebSocket.OPEN;
+    const latokenWsConnected = latokenWs?.readyState === WebSocket.OPEN;
+    const wsConnected = lbankWsConnected || latokenWsConnected;
 
-    const csrHasData = !!state.csr_usdt.lbankTicker && !!state.csr_usdt.uniswapQuote;
-    const csr25HasData = !!state.csr25_usdt.lbankTicker && !!state.csr25_usdt.uniswapQuote;
+    const csrHasData =
+      (!!state.csr_usdt.latokenTicker || !!state.csr_usdt.lbankTicker) &&
+      !!state.csr_usdt.uniswapQuote;
+    const csr25HasData =
+      !!state.csr25_usdt.lbankTicker && !!state.csr25_usdt.uniswapQuote;
 
-    let status: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
+    let status: "healthy" | "degraded" | "unhealthy" = "healthy";
     if (!wsConnected || (!csrHasData && !csr25HasData)) {
-      status = 'unhealthy';
+      status = "unhealthy";
     } else if (!csrHasData || !csr25HasData) {
-      status = 'degraded';
+      status = "degraded";
     }
 
     const health = {
-      service: 'strategy',
-      mode: 'DRY_RUN_ONLY',
+      service: "strategy",
+      mode: "DRY_RUN_ONLY",
       status,
       ts: new Date().toISOString(),
       ws_connected: wsConnected,
       markets: {
         csr_usdt: {
           has_lbank_data: !!state.csr_usdt.lbankTicker,
+          has_latoken_data: !!state.csr_usdt.latokenTicker,
           has_uniswap_data: !!state.csr_usdt.uniswapQuote,
           last_lbank_update: state.csr_usdt.lastLbankUpdate,
+          last_latoken_update: state.csr_usdt.lastLatokenUpdate,
           last_uniswap_update: state.csr_usdt.lastUniswapUpdate,
         },
         csr25_usdt: {
           has_lbank_data: !!state.csr25_usdt.lbankTicker,
+          has_latoken_data: !!state.csr25_usdt.latokenTicker,
           has_uniswap_data: !!state.csr25_usdt.uniswapQuote,
           last_lbank_update: state.csr25_usdt.lastLbankUpdate,
+          last_latoken_update: state.csr25_usdt.lastLatokenUpdate,
           last_uniswap_update: state.csr25_usdt.lastUniswapUpdate,
         },
       },
@@ -219,18 +293,19 @@ async function main(): Promise<void> {
       would_trade_count: wouldTradeCount,
     };
 
-    const httpStatus = status === 'healthy' ? 200 : status === 'degraded' ? 200 : 503;
+    const httpStatus =
+      status === "healthy" ? 200 : status === "degraded" ? 200 : 503;
     res.status(httpStatus).json(health);
   });
 
-  app.get('/decision', (_req: Request, res: Response) => {
+  app.get("/decision", (_req: Request, res: Response) => {
     res.json({
       csr_usdt: lastDecisions.csr_usdt,
       csr25_usdt: lastDecisions.csr25_usdt,
     });
   });
 
-  app.get('/state', (_req: Request, res: Response) => {
+  app.get("/state", (_req: Request, res: Response) => {
     const state = engine.getState();
     res.json({
       ts: new Date().toISOString(),
@@ -248,18 +323,23 @@ async function main(): Promise<void> {
   });
 
   app.listen(config.HTTP_PORT, () => {
-    log('info', 'server_started', { port: config.HTTP_PORT, mode: 'DRY_RUN_ONLY' });
+    log("info", "server_started", {
+      port: config.HTTP_PORT,
+      mode: "DRY_RUN_ONLY",
+    });
   });
 
-  process.on('SIGTERM', () => {
-    log('info', 'sigterm_received', { message: 'Shutting down' });
-    ws?.close();
+  process.on("SIGTERM", () => {
+    log("info", "sigterm_received", { message: "Shutting down" });
+    lbankWs?.close();
+    latokenWs?.close();
     process.exit(0);
   });
 
-  process.on('SIGINT', () => {
-    log('info', 'sigint_received', { message: 'Shutting down' });
-    ws?.close();
+  process.on("SIGINT", () => {
+    log("info", "sigint_received", { message: "Shutting down" });
+    lbankWs?.close();
+    latokenWs?.close();
     process.exit(0);
   });
 }

@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import WebSocket, { WebSocketServer } from 'ws';
-import { loadConfig, getSymbolsList } from './config';
+import { getSymbolsList, loadConfig } from "./config";
 import { createHealthServer } from './health';
 import { LatokenClient } from './latokenClient';
 import { LatokenTickerEvent } from './schemas';
@@ -72,6 +72,12 @@ async function main(): Promise<void> {
     apiSecret: config.LATOKEN_API_SECRET,
     symbols,
     pollIntervalMs: config.POLL_INTERVAL_MS,
+    config: {
+      MOCK_MODE: config.MOCK_MODE,
+      MOCK_BID: config.MOCK_BID,
+      MOCK_ASK: config.MOCK_ASK,
+      MOCK_LAST: config.MOCK_LAST,
+    },
     onLog: (level, event, data) => log(level as LogLevel, event, data),
   });
 
