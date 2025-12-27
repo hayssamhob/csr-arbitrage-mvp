@@ -103,30 +103,38 @@ export class StrategyEngine {
 
     // Need both data sources
     if (!lbankTicker || !uniswapQuote) {
-      this.onLog('debug', 'evaluation_skipped', { reason: 'incomplete_data' });
+      this.onLog("debug", "evaluation_skipped", { reason: "incomplete_data" });
       return;
     }
 
     // Check for stale data
     if (this.isDataStale()) {
-      this.onLog('warn', 'evaluation_skipped', { reason: 'stale_data' });
+      this.onLog("warn", "evaluation_skipped", { reason: "stale_data" });
       return;
     }
 
     // Check for quote errors
     if (uniswapQuote.error) {
-      this.onLog('warn', 'evaluation_skipped', { 
-        reason: 'quote_error',
-        error: uniswapQuote.error 
+      this.onLog("warn", "evaluation_skipped", {
+        reason: "quote_error",
+        error: uniswapQuote.error,
+      });
+      return;
+    }
+
+    // Check if quote is validated
+    if (uniswapQuote.validated === false) {
+      this.onLog("warn", "strategy.skipped", {
+        reason: "invalid_or_unvalidated_quote",
       });
       return;
     }
 
     // Calculate spreads and edge
     const decision = this.calculateDecision(lbankTicker, uniswapQuote);
-    
+
     // Log and emit decision
-    this.onLog('info', 'strategy_decision', {
+    this.onLog("info", "strategy_decision", {
       would_trade: decision.would_trade,
       direction: decision.direction,
       edge_bps: decision.edge_after_costs_bps,

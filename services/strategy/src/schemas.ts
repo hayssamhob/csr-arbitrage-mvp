@@ -21,7 +21,7 @@ export type LBankTickerEvent = z.infer<typeof LBankTickerEventSchema>;
 
 // Uniswap quote result (from quote service)
 export const UniswapQuoteResultSchema = z.object({
-  type: z.literal('uniswap.quote'),
+  type: z.literal("uniswap.quote"),
   pair: z.string(),
   chain_id: z.number(),
   ts: z.string(),
@@ -31,11 +31,14 @@ export const UniswapQuoteResultSchema = z.object({
   amount_out_unit: z.string(),
   effective_price_usdt: z.number(),
   estimated_gas: z.number(),
-  route: z.object({
-    summary: z.string(),
-    pools: z.array(z.string()).optional(),
-  }).optional(),
+  route: z
+    .object({
+      summary: z.string(),
+      pools: z.array(z.string()).optional(),
+    })
+    .optional(),
   is_stale: z.boolean().optional(),
+  validated: z.boolean().optional(),
   error: z.string().optional(),
 });
 

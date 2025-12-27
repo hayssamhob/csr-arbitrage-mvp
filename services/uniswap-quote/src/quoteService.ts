@@ -145,17 +145,83 @@ export class QuoteService {
 
     // Handle mock mode
     if (this.mockMode) {
-      this.onLog("debug", "mock_quote", { amountUsdt, direction });
+      // Convert USDT amount to raw units (6 decimals)
+      const amountInRaw = BigInt(Math.floor(amountUsdt * 10 ** 6));
 
-      // Simulate quote with mock price
-      const outputAmount =
-        direction === "buy"
-          ? amountUsdt / this.mockPrice // USDT -> CSR
-          : amountUsdt * this.mockPrice; // CSR -> USDT
+      // Calculate output based on mock price
+      // For buy: USDT -> CSR (how much CSR for X USDT)
+      // For sell: CSR -> USDT (how much USDT for X CSR)
+      let effectivePriceUsdtPerToken = this.mockPrice;
+      let outputAmountRaw: BigInt;
+
+      if (direction === "buy") {
+        // Buying CSR with USDT: output = USDT_amount / price_per_CSR
+        const tokenAmount = amountUsdt / this.mockPrice;
+        outputAmountRaw = BigInt(Math.floor(tokenAmount * 10 ** 18));
+        effectivePriceUsdtPerToken = this.mockPrice;
+      } else {
+        // Selling CSR for USDT: output = CSR_amount * price_per_CSR
+        // For sell direction, amountUsdt represents CSR amount
+        const csrAmount = amountUsdt;
+        outputAmountRaw = BigInt(
+          Math.floor(csrAmount * this.mockPrice * 10 ** 6)
+        );
+        effectivePriceUsdtPerToken = this.mockPrice;
+      }
 
       // Add small random variation to simulate market movement
       const variation = 1 + (Math.random() - 0.5) * 0.002; // ±0.1%
-      const adjustedOutput = outputAmount * variation;
+      const adjustedOutputRaw = BigInt(
+        Math.floor(Number(outputAmountRaw) * variation)
+      );
+
+      // Convert back to human readable
+      const adjustedOutput =
+        Number(adjustedOutputRaw) / 10 ** (direction === "buy" ? 18 : 6);
+
+      // Diagnostic logging
+      this.onLog("info", "quote_debug", {
+        tokenIn: {
+          symbol: this.tokenIn.symbol,
+          address: this.tokenIn.address,
+          decimals: this.tokenIn.decimals,
+        },
+        tokenOut: {
+          symbol: this.tokenOut.symbol,
+          address: this.tokenOut.address,
+          decimals: this.tokenOut.decimals,
+        },
+        direction,
+        amountInRaw: amountInRaw.toString(),
+        amountOutRaw: adjustedOutputRaw.toString(),
+        amountInHuman: amountUsdt,
+        amountOutHuman: adjustedOutput,
+        mockPrice: this.mockPrice,
+        priceUsdtPerToken: effectivePriceUsdtPerToken,
+        variation,
+      });
+
+      // Safety validation
+      if (effectivePriceUsdtPerToken <= 0 || effectivePriceUsdtPerToken > 10) {
+        this.onLog("warn", "invalid_price", {
+          price: effectivePriceUsdtPerToken,
+        });
+        return {
+          type: "uniswap.quote",
+          pair: `${this.tokenOut.symbol}/${this.tokenIn.symbol}`,
+          chain_id: this.chainId,
+          ts: now,
+          amount_in: amountUsdt.toString(),
+          amount_in_unit: this.tokenIn.symbol || "USDT",
+          amount_out: "0",
+          amount_out_unit: this.tokenOut.symbol || "TOKEN",
+          effective_price_usdt: 0,
+          estimated_gas: 0,
+          error: "Price out of reasonable bounds",
+          is_stale: true,
+          validated: false,
+        };
+      }
 
       return {
         type: "uniswap.quote",
@@ -166,16 +232,14 @@ export class QuoteService {
         amount_in_unit: this.tokenIn.symbol || "USDT",
         amount_out: adjustedOutput.toFixed(6),
         amount_out_unit: this.tokenOut.symbol || "TOKEN",
-        effective_price_usdt:
-          direction === "buy"
-            ? this.mockPrice * variation
-            : this.mockPrice / variation,
+        effective_price_usdt: effectivePriceUsdtPerToken * variation,
         estimated_gas: 150000, // Mock gas estimate
         route: {
           summary: "mock",
           pools: ["mock"],
         },
         is_stale: false,
+        validated: true,
       };
     }
 
@@ -234,6 +298,48 @@ export class QuoteService {
       effectivePrice = parseFloat(outputAmount) / amountUsdt;
     }
 
+    // Safety validation
+    if (effectivePrice <= 0 || effectivePrice > 10) {
+      this.onLog("warn", "invalid_price", { price: effectivePrice });
+      return {
+        type: "uniswap.quote",
+        pair: `${this.tokenOut.symbol}/${this.tokenIn.symbol}`,
+        chain_id: this.chainId,
+        ts: now,
+        amount_in: amountUsdt.toString(),
+        amount_in_unit: inputToken.symbol || "TOKEN",
+        amount_out: "0",
+        amount_out_unit: outputToken.symbol || "TOKEN",
+        effective_price_usdt: 0,
+        estimated_gas: 0,
+        error: "Price out of reasonable bounds",
+        is_stale: true,
+        validated: false,
+      };
+    }
+
+    // Diagnostic logging
+    this.onLog("info", "quote_debug", {
+      tokenIn: {
+        symbol: inputToken.symbol,
+        address: inputToken.address,
+        decimals: inputToken.decimals,
+      },
+      tokenOut: {
+        symbol: outputToken.symbol,
+        address: outputToken.address,
+        decimals: outputToken.decimals,
+      },
+      direction,
+      amountInRaw: amountInWei.toString(),
+      amountOutRaw: route.quote.quotient.toString(),
+      amountInHuman: amountUsdt,
+      amountOutHuman: parseFloat(outputAmount),
+      priceUsdtPerToken: effectivePrice,
+      route: route.routeString || "direct",
+      gasEstimate,
+    });
+
     const result: UniswapQuoteResult = {
       type: "uniswap.quote",
       pair: `${this.tokenOut.symbol}/${this.tokenIn.symbol}`,
@@ -252,6 +358,7 @@ export class QuoteService {
         ),
       },
       is_stale: false,
+      validated: true,
     };
 
     this.onLog("info", "quote_fetched", {
