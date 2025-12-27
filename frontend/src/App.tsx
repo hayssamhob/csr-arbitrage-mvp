@@ -480,7 +480,7 @@ function App() {
                   </div>
                 ) : (
                   <div className="text-green-400 text-sm mt-2">
-                    Uniswap price: OK (v4 stateview)
+                    Uniswap price: OK (v4 subgraph)
                   </div>
                 )}
                 <div className="text-xs text-slate-500 mt-2">

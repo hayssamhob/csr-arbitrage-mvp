@@ -28,6 +28,24 @@ const ConfigSchema = z.object({
     .transform((str) => JSON.parse(str))
     .pipe(TokenConfigSchema),
 
+  // The Graph API configuration
+  GRAPH_API_KEY: z.string().min(1, "Graph API key is required"),
+  UNISWAP_V4_SUBGRAPH_ID: z.string().min(1, "Subgraph ID is required"),
+
+  // Token configurations
+  USDT_CONFIG: z
+    .string()
+    .transform((str) => JSON.parse(str))
+    .pipe(TokenConfigSchema),
+  CSR_CONFIG: z
+    .string()
+    .transform((str) => JSON.parse(str))
+    .pipe(TokenConfigSchema),
+  CSR25_CONFIG: z
+    .string()
+    .transform((str) => JSON.parse(str))
+    .pipe(TokenConfigSchema),
+
   // Quote sizes in USDT (comma-separated)
   QUOTE_SIZES_USDT: z.string().default("100,500,1000"),
 
@@ -65,6 +83,11 @@ export function loadConfig(): Config {
     RPC_URL: process.env.RPC_URL,
     TOKEN_IN_CONFIG: process.env.TOKEN_IN_CONFIG,
     TOKEN_OUT_CONFIG: process.env.TOKEN_OUT_CONFIG,
+    GRAPH_API_KEY: process.env.GRAPH_API_KEY,
+    UNISWAP_V4_SUBGRAPH_ID: process.env.UNISWAP_V4_SUBGRAPH_ID,
+    USDT_CONFIG: process.env.USDT_CONFIG,
+    CSR_CONFIG: process.env.CSR_CONFIG,
+    CSR25_CONFIG: process.env.CSR25_CONFIG,
     QUOTE_SIZES_USDT: process.env.QUOTE_SIZES_USDT,
     QUOTE_CACHE_TTL_SECONDS: process.env.QUOTE_CACHE_TTL_SECONDS,
     HTTP_PORT: process.env.HTTP_PORT,
