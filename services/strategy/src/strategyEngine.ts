@@ -1,9 +1,9 @@
 import { Config } from './config';
 import {
-    LBankTickerEvent,
-    StrategyDecision,
-    UniswapQuoteResult,
-} from './schemas';
+  LBankTickerEvent,
+  StrategyDecision,
+  UniswapQuoteResult,
+} from "./schemas";
 
 // ============================================================================
 // Strategy Engine
@@ -206,48 +206,76 @@ export class StrategyEngine {
     const spreadBuyCexSellDex = ((uniswapPrice - lbankAsk) / lbankAsk) * 10000;
 
     // Scenario 2: Buy on DEX, sell on CEX (at bid)
-    const spreadBuyDexSellCex = ((lbankBid - uniswapPrice) / uniswapPrice) * 10000;
+    const spreadBuyDexSellCex =
+      ((lbankBid - uniswapPrice) / uniswapPrice) * 10000;
 
     // Determine best direction
     let rawSpreadBps: number;
-    let direction: StrategyDecision['direction'];
+    let direction: StrategyDecision["direction"];
 
     if (spreadBuyCexSellDex > spreadBuyDexSellCex && spreadBuyCexSellDex > 0) {
       rawSpreadBps = spreadBuyCexSellDex;
-      direction = 'buy_cex_sell_dex';
+      direction = "buy_cex_sell_dex";
     } else if (spreadBuyDexSellCex > 0) {
       rawSpreadBps = spreadBuyDexSellCex;
-      direction = 'buy_dex_sell_cex';
+      direction = "buy_dex_sell_cex";
     } else {
       rawSpreadBps = Math.max(spreadBuyCexSellDex, spreadBuyDexSellCex);
-      direction = 'none';
+      direction = "none";
     }
 
-    // Calculate edge after costs
-    const estimatedCostBps = this.config.ESTIMATED_COST_BPS;
+    // Calculate detailed costs
+    // 1. CEX trading fee (one side of the trade)
+    const cexFeeBps = this.config.CEX_TRADING_FEE_BPS;
+
+    // 2. DEX LP fee (Uniswap pool fee)
+    const dexFeeBps = this.config.DEX_LP_FEE_BPS;
+
+    // 3. Gas cost as basis points of trade size
+    const gasCostBps =
+      (this.config.GAS_COST_USDT / this.config.QUOTE_SIZE_USDT) * 10000;
+
+    // 4. Network/withdrawal fee as basis points of trade size
+    const networkFeeBps =
+      (this.config.NETWORK_FEE_USDT / this.config.QUOTE_SIZE_USDT) * 10000;
+
+    // 5. Slippage buffer
+    const slippageBps = this.config.SLIPPAGE_BUFFER_BPS;
+
+    // Total estimated cost
+    const estimatedCostBps =
+      cexFeeBps + dexFeeBps + gasCostBps + networkFeeBps + slippageBps;
     const edgeAfterCostsBps = rawSpreadBps - estimatedCostBps;
 
     // Determine if we would trade
-    const wouldTrade = edgeAfterCostsBps >= this.config.MIN_EDGE_BPS && direction !== 'none';
+    const wouldTrade =
+      edgeAfterCostsBps >= this.config.MIN_EDGE_BPS && direction !== "none";
 
     // Calculate suggested size (bounded by max)
     let suggestedSize = 0;
     if (wouldTrade) {
-      suggestedSize = Math.min(this.config.QUOTE_SIZE_USDT, this.config.MAX_TRADE_SIZE_USDT);
+      suggestedSize = Math.min(
+        this.config.QUOTE_SIZE_USDT,
+        this.config.MAX_TRADE_SIZE_USDT
+      );
     }
 
     // Build reason string
     let reason: string;
-    if (direction === 'none') {
-      reason = 'No positive spread opportunity';
+    if (direction === "none") {
+      reason = "No positive spread opportunity";
     } else if (!wouldTrade) {
-      reason = `Edge ${edgeAfterCostsBps.toFixed(1)}bps below threshold ${this.config.MIN_EDGE_BPS}bps`;
+      reason = `Edge ${edgeAfterCostsBps.toFixed(1)}bps below threshold ${
+        this.config.MIN_EDGE_BPS
+      }bps`;
     } else {
-      reason = `Edge ${edgeAfterCostsBps.toFixed(1)}bps exceeds threshold, direction: ${direction}`;
+      reason = `Edge ${edgeAfterCostsBps.toFixed(
+        1
+      )}bps exceeds threshold, direction: ${direction}`;
     }
 
     return {
-      type: 'strategy.decision',
+      type: "strategy.decision",
       ts: now,
       symbol: ticker.symbol,
       lbank_bid: lbankBid,

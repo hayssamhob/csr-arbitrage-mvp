@@ -27,9 +27,21 @@ const ConfigSchema = z.object({
   // Minimum edge threshold in basis points to consider trading
   MIN_EDGE_BPS: z.coerce.number().min(0).default(50), // 0.5%
 
-  // Estimated trading costs in basis points
-  // Includes: LP fees, gas, slippage buffer
-  ESTIMATED_COST_BPS: z.coerce.number().min(0).default(30), // 0.3%
+  // === FEE CONFIGURATION ===
+  // CEX trading fee in basis points (LBank: ~10bps maker, 20bps taker)
+  CEX_TRADING_FEE_BPS: z.coerce.number().min(0).default(20),
+
+  // DEX LP fee in basis points (Uniswap v3/v4: 5, 30, or 100 bps depending on pool)
+  DEX_LP_FEE_BPS: z.coerce.number().min(0).default(30),
+
+  // Estimated gas cost for DEX swap in USDT
+  GAS_COST_USDT: z.coerce.number().min(0).default(5),
+
+  // Network/withdrawal fee in USDT (CEX withdrawal + bridge if needed)
+  NETWORK_FEE_USDT: z.coerce.number().min(0).default(10),
+
+  // Slippage buffer in basis points (extra safety margin)
+  SLIPPAGE_BUFFER_BPS: z.coerce.number().min(0).default(10),
 
   // Maximum trade size in USDT
   MAX_TRADE_SIZE_USDT: z.coerce.number().positive().default(5000),
@@ -58,7 +70,11 @@ export function loadConfig(): Config {
     UNISWAP_QUOTE_CSR_URL: process.env.UNISWAP_QUOTE_CSR_URL,
     QUOTE_SIZE_USDT: process.env.QUOTE_SIZE_USDT,
     MIN_EDGE_BPS: process.env.MIN_EDGE_BPS,
-    ESTIMATED_COST_BPS: process.env.ESTIMATED_COST_BPS,
+    CEX_TRADING_FEE_BPS: process.env.CEX_TRADING_FEE_BPS,
+    DEX_LP_FEE_BPS: process.env.DEX_LP_FEE_BPS,
+    GAS_COST_USDT: process.env.GAS_COST_USDT,
+    NETWORK_FEE_USDT: process.env.NETWORK_FEE_USDT,
+    SLIPPAGE_BUFFER_BPS: process.env.SLIPPAGE_BUFFER_BPS,
     MAX_TRADE_SIZE_USDT: process.env.MAX_TRADE_SIZE_USDT,
     UNISWAP_POLL_INTERVAL_MS: process.env.UNISWAP_POLL_INTERVAL_MS,
     MAX_STALENESS_SECONDS: process.env.MAX_STALENESS_SECONDS,
