@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import { Config, TokenConfig } from "./config";
 import { CachedQuote, UniswapQuoteResult } from "./schemas";
+import { V4PoolReader } from "./v4PoolReader";
 
 // ============================================================================
 // Uniswap Quote Service - Simplified Implementation
@@ -31,6 +32,7 @@ export class QuoteService {
   private consecutiveFailures = 0;
   private readonly onLog: LogFn;
   private poolId: string;
+  private v4Reader: V4PoolReader;
 
   constructor(config: Config, onLog: LogFn) {
     this.chainId = config.CHAIN_ID;
@@ -39,6 +41,12 @@ export class QuoteService {
 
     // Initialize provider - REAL ON-CHAIN DATA ONLY
     this.provider = new ethers.providers.JsonRpcProvider(config.RPC_URL);
+
+    // Initialize V4 pool reader
+    this.v4Reader = new V4PoolReader(
+      this.provider,
+      config.UNISWAP_V4_MANAGER_ADDRESS
+    );
 
     // Initialize tokens from config
     this.tokenIn = this.createToken(config.TOKEN_IN_CONFIG);
@@ -53,12 +61,12 @@ export class QuoteService {
       throw new Error(`Unsupported token: ${this.tokenOut.symbol}`);
     }
 
-    this.onLog("info", "uniswap_quote_service_initialized", {
+    this.onLog("info", "uniswap_v4_quote_service_initialized", {
       chainId: this.chainId,
       tokenIn: this.tokenIn.symbol,
       tokenOut: this.tokenOut.symbol,
       poolId: this.poolId,
-      note: "Uniswap v4 direct pool reading not yet implemented",
+      managerAddress: config.UNISWAP_V4_MANAGER_ADDRESS,
     });
   }
 
@@ -136,29 +144,19 @@ export class QuoteService {
   ): Promise<UniswapQuoteResult> {
     const now = new Date().toISOString();
 
-    // For now, verify token exists and return unavailable status
-    // Uniswap v4 requires complex hook implementation which is beyond MVP scope
-
-    const tokenContract = new ethers.Contract(
-      this.tokenOut.address,
-      ERC20_ABI,
-      this.provider
+    // Read real v4 pool state
+    const poolState = await this.v4Reader.readPoolState(
+      this.poolId,
+      this.tokenIn,
+      this.tokenOut
     );
 
-    try {
-      // Verify token exists by checking decimals and symbol
-      const [decimals, symbol] = await Promise.all([
-        tokenContract.decimals(),
-        tokenContract.symbol(),
-      ]);
-
-      this.onLog("info", "token_verified", {
-        address: this.tokenOut.address,
-        symbol,
-        decimals,
+    if (!poolState.exists) {
+      this.onLog("warn", "pool_not_found", {
+        poolId: this.poolId,
+        token: this.tokenOut.symbol,
       });
 
-      // Return unavailable status since we can't read v4 pools yet
       return {
         type: "uniswap.quote",
         pair: `${this.tokenOut.symbol}/${this.tokenIn.symbol}`,
@@ -170,14 +168,80 @@ export class QuoteService {
         amount_out_unit: this.tokenOut.symbol || "TOKEN",
         effective_price_usdt: 0,
         estimated_gas: 0,
-        error: "Uniswap v4 pool reading not yet implemented",
+        error: "Pool not found",
         is_stale: true,
         validated: false,
         source: "uniswap_v4_pool_state",
       };
-    } catch (tokenError) {
-      throw new Error(`Token verification failed: ${tokenError}`);
     }
+
+    // Calculate output amount
+    let outputAmount: number;
+    if (direction === "buy") {
+      // Buying tokens with USDT
+      outputAmount = amountUsdt / poolState.price;
+    } else {
+      // Selling tokens for USDT
+      outputAmount = amountUsdt * poolState.price;
+    }
+
+    // Safety validation
+    if (poolState.price <= 0 || poolState.price > 10) {
+      this.onLog("warn", "invalid_price", {
+        price: poolState.price,
+        token: this.tokenOut.symbol,
+      });
+
+      return {
+        type: "uniswap.quote",
+        pair: `${this.tokenOut.symbol}/${this.tokenIn.symbol}`,
+        chain_id: this.chainId,
+        ts: now,
+        amount_in: amountUsdt.toString(),
+        amount_in_unit: this.tokenIn.symbol || "USDT",
+        amount_out: "0",
+        amount_out_unit: this.tokenOut.symbol || "TOKEN",
+        effective_price_usdt: 0,
+        estimated_gas: 0,
+        error: "Price out of bounds",
+        is_stale: true,
+        validated: false,
+        source: "uniswap_v4_pool_state",
+      };
+    }
+
+    // Log successful quote
+    this.onLog("info", "v4_pool_quote", {
+      source: "uniswap_v4_pool_state",
+      token: this.tokenOut.symbol,
+      poolId: this.poolId,
+      price: poolState.price,
+      liquidity: poolState.liquidity,
+      sqrtPriceX96: poolState.sqrtPriceX96,
+      amountIn: amountUsdt,
+      amountOut: outputAmount,
+      executable: false,
+    });
+
+    return {
+      type: "uniswap.quote",
+      pair: `${this.tokenOut.symbol}/${this.tokenIn.symbol}`,
+      chain_id: this.chainId,
+      ts: now,
+      amount_in: amountUsdt.toString(),
+      amount_in_unit: this.tokenIn.symbol || "USDT",
+      amount_out: outputAmount.toFixed(6),
+      amount_out_unit: this.tokenOut.symbol || "TOKEN",
+      effective_price_usdt: poolState.price,
+      estimated_gas: 0,
+      route: {
+        summary: this.poolId,
+        pools: [this.poolId],
+      },
+      is_stale: false,
+      validated: true,
+      source: "uniswap_v4_pool_state",
+    };
   }
 
   // Health check helpers
