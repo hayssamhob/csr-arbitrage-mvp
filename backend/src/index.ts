@@ -30,6 +30,7 @@ interface ServiceHealth {
   last_message_ts?: string;
   reconnect_count: number;
   errors_last_5m: number;
+  subscription_errors?: Record<string, string>;
 }
 
 interface MarketData {
@@ -128,6 +129,7 @@ async function fetchServiceData() {
         last_message_ts: data.last_message_ts,
         reconnect_count: data.reconnect_count || 0,
         errors_last_5m: data.errors_last_5m || 0,
+        subscription_errors: data.subscription_errors || undefined,
       };
     } catch {
       lbankHealth = {

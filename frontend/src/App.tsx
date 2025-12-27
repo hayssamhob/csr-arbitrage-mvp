@@ -3,14 +3,15 @@ import { useEffect, useState } from 'react'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001'
 
 interface ServiceHealth {
-  service: string
-  status: string
-  ts: string
-  is_stale: boolean
-  connected: boolean
-  last_message_ts?: string
-  reconnect_count: number
-  errors_last_5m: number
+  service: string;
+  status: string;
+  ts: string;
+  is_stale: boolean;
+  connected: boolean;
+  last_message_ts?: string;
+  reconnect_count: number;
+  errors_last_5m: number;
+  subscription_errors?: Record<string, string>;
 }
 
 interface LBankTicker {
@@ -113,34 +114,50 @@ function timeAgo(ts: string): string {
   return `${Math.floor(diffMs / 3600000)}h ago`;
 }
 
-function MarketCard({ title, market, uniswapHealth }: { 
-  title: string; 
-  market: MarketData; 
-  uniswapHealth?: ServiceHealth 
+function MarketCard({
+  title,
+  market,
+  lbankHealth,
+}: {
+  title: string;
+  market: MarketData;
+  lbankHealth?: ServiceHealth;
 }) {
   const lbank = market.lbank_ticker;
   const uniswap = market.uniswap_quote;
   const decision = market.decision;
 
+  const lbankSymbolKey = title.toLowerCase().includes("csr25")
+    ? "csr25_usdt"
+    : "csr_usdt";
+  const lbankSubscriptionError =
+    lbankHealth?.subscription_errors?.[lbankSymbolKey];
+
   return (
     <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
       <h3 className="text-xl font-bold text-white mb-4">{title}</h3>
-      
+
       {/* LBank (CEX) Section */}
       <div className="mb-4 p-4 bg-slate-900 rounded-lg">
         <div className="flex items-center justify-between mb-2">
           <span className="text-slate-400 font-medium">LBank (CEX)</span>
-          {lbank && <span className="text-xs text-slate-500">{timeAgo(lbank.ts)}</span>}
+          {lbank && (
+            <span className="text-xs text-slate-500">{timeAgo(lbank.ts)}</span>
+          )}
         </div>
         {lbank ? (
           <div className="space-y-2">
             <div className="flex justify-between">
               <span className="text-slate-400">Bid</span>
-              <span className="font-mono text-green-400">${formatPrice(lbank.bid)}</span>
+              <span className="font-mono text-green-400">
+                ${formatPrice(lbank.bid)}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Ask</span>
-              <span className="font-mono text-red-400">${formatPrice(lbank.ask)}</span>
+              <span className="font-mono text-red-400">
+                ${formatPrice(lbank.ask)}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Last</span>
@@ -148,11 +165,28 @@ function MarketCard({ title, market, uniswapHealth }: {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Volume 24h</span>
-              <span className="font-mono text-sm">{lbank.volume_24h.toLocaleString()}</span>
+              <span className="font-mono text-sm">
+                {lbank.volume_24h.toLocaleString()}
+              </span>
             </div>
           </div>
         ) : (
-          <div className="text-yellow-400 text-sm">No LBank data</div>
+          <div className="space-y-2">
+            <div className="text-yellow-400 text-sm">
+              {lbankSubscriptionError
+                ? "LBank subscription rejected"
+                : "No LBank data"}
+            </div>
+            {lbankSubscriptionError ? (
+              <div className="text-xs text-slate-500">
+                {lbankSubscriptionError}
+              </div>
+            ) : (
+              <div className="text-xs text-slate-500">
+                Waiting for ticker stream
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -160,22 +194,30 @@ function MarketCard({ title, market, uniswapHealth }: {
       <div className="mb-4 p-4 bg-slate-900 rounded-lg">
         <div className="flex items-center justify-between mb-2">
           <span className="text-slate-400 font-medium">Uniswap (DEX)</span>
-          {uniswap && <span className="text-xs text-slate-500">{timeAgo(uniswap.ts)}</span>}
+          {uniswap && (
+            <span className="text-xs text-slate-500">
+              {timeAgo(uniswap.ts)}
+            </span>
+          )}
         </div>
         {uniswap ? (
           <div className="space-y-2">
             <div className="flex justify-between">
               <span className="text-slate-400">Price</span>
-              <span className="font-mono text-blue-400">${formatPrice(uniswap.effective_price_usdt)}</span>
+              <span className="font-mono text-blue-400">
+                ${formatPrice(uniswap.effective_price_usdt)}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Source</span>
-              <span className="font-mono text-xs">{uniswap.source || 'unknown'}</span>
+              <span className="font-mono text-xs">
+                {uniswap.source || "unknown"}
+              </span>
             </div>
             {uniswap.error ? (
               <div className="text-yellow-400 text-sm">
-                {uniswap.error === 'Pool not found' 
-                  ? 'Pool not found' 
+                {uniswap.error === "Pool not found"
+                  ? "Pool not found"
                   : uniswap.error.toLowerCase()}
               </div>
             ) : uniswap.validated ? (
@@ -196,17 +238,31 @@ function MarketCard({ title, market, uniswapHealth }: {
           <div className="space-y-2">
             <div className="flex justify-between">
               <span className="text-slate-400">Raw Spread</span>
-              <span className={`font-mono ${decision.raw_spread_bps > 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <span
+                className={`font-mono ${
+                  decision.raw_spread_bps > 0
+                    ? "text-green-400"
+                    : "text-red-400"
+                }`}
+              >
                 {decision.raw_spread_bps.toFixed(1)} bps
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Est. Costs</span>
-              <span className="font-mono text-orange-400">{decision.estimated_cost_bps} bps</span>
+              <span className="font-mono text-orange-400">
+                {decision.estimated_cost_bps} bps
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Edge After Costs</span>
-              <span className={`font-mono font-bold ${decision.edge_after_costs_bps > 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <span
+                className={`font-mono font-bold ${
+                  decision.edge_after_costs_bps > 0
+                    ? "text-green-400"
+                    : "text-red-400"
+                }`}
+              >
                 {decision.edge_after_costs_bps.toFixed(1)} bps
               </span>
             </div>
@@ -223,19 +279,27 @@ function MarketCard({ title, market, uniswapHealth }: {
           <div className="space-y-2">
             <div className="flex justify-between">
               <span className="text-slate-400">Would Trade</span>
-              <span className={`font-bold ${decision.would_trade ? 'text-green-400' : 'text-slate-400'}`}>
-                {decision.would_trade ? 'YES' : 'NO'}
+              <span
+                className={`font-bold ${
+                  decision.would_trade ? "text-green-400" : "text-slate-400"
+                }`}
+              >
+                {decision.would_trade ? "YES" : "NO"}
               </span>
             </div>
             {decision.would_trade && (
               <>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Direction</span>
-                  <span className="font-mono text-sm">{decision.direction}</span>
+                  <span className="font-mono text-sm">
+                    {decision.direction}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Suggested Size</span>
-                  <span className="font-mono">${decision.suggested_size_usdt}</span>
+                  <span className="font-mono">
+                    ${decision.suggested_size_usdt}
+                  </span>
                 </div>
               </>
             )}
@@ -258,7 +322,7 @@ function App() {
     let ws: WebSocket | null = null;
 
     function connect() {
-      ws = new WebSocket(`${API_URL.replace('http', 'ws')}/ws`);
+      ws = new WebSocket(`${API_URL.replace("http", "ws")}/ws`);
 
       ws.onopen = () => {
         setError(null);
@@ -270,16 +334,16 @@ function App() {
           setData(parsed);
           setLastUpdate(new Date());
         } catch {
-          console.error('Failed to parse WS message');
+          console.error("Failed to parse WS message");
         }
       };
 
       ws.onerror = () => {
-        setError('WebSocket error');
+        setError("WebSocket error");
       };
 
       ws.onclose = () => {
-        setError('Connection lost');
+        setError("Connection lost");
         setTimeout(connect, 3000);
       };
     }
@@ -303,7 +367,7 @@ function App() {
             setError(null);
           }
         } catch {
-          console.error('Polling failed');
+          console.error("Polling failed");
         }
       }, 2000);
       return () => clearInterval(interval);
@@ -316,12 +380,18 @@ function App() {
       <header className="mb-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white">CSR Arbitrage Monitor</h1>
-            <p className="text-slate-400 mt-1">Real-time arbitrage opportunity detection</p>
+            <h1 className="text-3xl font-bold text-white">
+              CSR Arbitrage Monitor
+            </h1>
+            <p className="text-slate-400 mt-1">
+              Real-time arbitrage opportunity detection
+            </p>
           </div>
           <div className="text-right">
             <div className="text-sm text-slate-400">Last Update</div>
-            <div className="text-lg font-mono">{timeAgo(lastUpdate.toISOString())}</div>
+            <div className="text-lg font-mono">
+              {timeAgo(lastUpdate.toISOString())}
+            </div>
             {error && <div className="text-red-400 text-sm mt-1">{error}</div>}
           </div>
         </div>
@@ -329,36 +399,54 @@ function App() {
 
       {/* System Status Bar */}
       <section className="mb-8">
-        <h2 className="text-xl font-semibold mb-4 text-slate-300">System Status</h2>
+        <h2 className="text-xl font-semibold mb-4 text-slate-300">
+          System Status
+        </h2>
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
             <div className="flex items-center justify-between mb-2">
               <span className="text-slate-400">Overall</span>
-              <StatusBadge status={data?.system_status.overall_status || 'unknown'} />
+              <StatusBadge
+                status={data?.system_status.overall_status || "unknown"}
+              />
             </div>
           </div>
           <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
             <div className="flex items-center justify-between mb-2">
               <span className="text-slate-400">LBank Gateway</span>
-              <StatusBadge status={data?.system_status.lbank_gateway?.status || 'unknown'} />
+              <StatusBadge
+                status={data?.system_status.lbank_gateway?.status || "unknown"}
+              />
             </div>
           </div>
           <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
             <div className="flex items-center justify-between mb-2">
               <span className="text-slate-400">Uniswap CSR</span>
-              <StatusBadge status={data?.system_status.uniswap_quote_csr?.status || 'unknown'} />
+              <StatusBadge
+                status={
+                  data?.system_status.uniswap_quote_csr?.status || "unknown"
+                }
+              />
             </div>
           </div>
           <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
             <div className="flex items-center justify-between mb-2">
               <span className="text-slate-400">Uniswap CSR25</span>
-              <StatusBadge status={data?.system_status.uniswap_quote_csr25?.status || 'unknown'} />
+              <StatusBadge
+                status={
+                  data?.system_status.uniswap_quote_csr25?.status || "unknown"
+                }
+              />
             </div>
           </div>
           <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
             <div className="flex items-center justify-between mb-2">
               <span className="text-slate-400">Strategy</span>
-              <StatusBadge status={data?.system_status.strategy_engine?.status || 'unknown'} />
+              <StatusBadge
+                status={
+                  data?.system_status.strategy_engine?.status || "unknown"
+                }
+              />
             </div>
           </div>
         </div>
@@ -369,13 +457,19 @@ function App() {
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <span className="text-slate-400">Execution Mode:</span>
-            <span className="px-3 py-1 bg-blue-600 text-white rounded font-bold">OFF</span>
+            <span className="px-3 py-1 bg-blue-600 text-white rounded font-bold">
+              OFF
+            </span>
           </div>
           <div className="flex items-center gap-4">
             <span className="text-slate-400">Kill Switch:</span>
-            <span className="px-3 py-1 bg-green-600 text-white rounded font-bold">ACTIVE</span>
+            <span className="px-3 py-1 bg-green-600 text-white rounded font-bold">
+              ACTIVE
+            </span>
           </div>
-          <div className="text-sm text-slate-500">DRY RUN MODE - No trades executed</div>
+          <div className="text-sm text-slate-500">
+            DRY RUN MODE - No trades executed
+          </div>
         </div>
       </section>
 
@@ -383,15 +477,27 @@ function App() {
       <section className="mb-8">
         <h2 className="text-xl font-semibold mb-4 text-slate-300">Markets</h2>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <MarketCard 
-            title="CSR / USDT" 
-            market={data?.market_state?.csr_usdt || { lbank_ticker: undefined, uniswap_quote: undefined, decision: undefined }} 
-            uniswapHealth={data?.system_status.uniswap_quote_csr}
+          <MarketCard
+            title="CSR / USDT"
+            market={
+              data?.market_state?.csr_usdt || {
+                lbank_ticker: undefined,
+                uniswap_quote: undefined,
+                decision: undefined,
+              }
+            }
+            lbankHealth={data?.system_status.lbank_gateway}
           />
-          <MarketCard 
-            title="CSR25 / USDT" 
-            market={data?.market_state?.csr25_usdt || { lbank_ticker: undefined, uniswap_quote: undefined, decision: undefined }} 
-            uniswapHealth={data?.system_status.uniswap_quote_csr25}
+          <MarketCard
+            title="CSR25 / USDT"
+            market={
+              data?.market_state?.csr25_usdt || {
+                lbank_ticker: undefined,
+                uniswap_quote: undefined,
+                decision: undefined,
+              }
+            }
+            lbankHealth={data?.system_status.lbank_gateway}
           />
         </div>
       </section>
@@ -399,18 +505,29 @@ function App() {
       {/* Opportunities */}
       {data?.opportunities && data.opportunities.length > 0 && (
         <section className="mb-8">
-          <h2 className="text-xl font-semibold mb-4 text-slate-300">Active Opportunities</h2>
+          <h2 className="text-xl font-semibold mb-4 text-slate-300">
+            Active Opportunities
+          </h2>
           <div className="space-y-4">
             {data.opportunities.map((opp, i) => (
-              <div key={i} className="bg-green-900/30 border border-green-500 rounded-lg p-4">
+              <div
+                key={i}
+                className="bg-green-900/30 border border-green-500 rounded-lg p-4"
+              >
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="font-bold text-green-400">{opp.symbol.toUpperCase()}</span>
+                    <span className="font-bold text-green-400">
+                      {opp.symbol.toUpperCase()}
+                    </span>
                     <span className="ml-4 text-slate-300">{opp.direction}</span>
                   </div>
                   <div className="text-right">
-                    <span className="text-green-400 font-bold">{opp.edge_after_costs_bps.toFixed(1)} bps edge</span>
-                    <span className="ml-4 text-slate-400">Size: ${opp.suggested_size_usdt}</span>
+                    <span className="text-green-400 font-bold">
+                      {opp.edge_after_costs_bps.toFixed(1)} bps edge
+                    </span>
+                    <span className="ml-4 text-slate-400">
+                      Size: ${opp.suggested_size_usdt}
+                    </span>
                   </div>
                 </div>
               </div>

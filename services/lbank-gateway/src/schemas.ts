@@ -42,6 +42,14 @@ export const LBankPongSchema = z.object({
   pong: z.string(),
 });
 
+// Error messages returned by LBank V2 WS (e.g. invalid pairs)
+export const LBankErrorMessageSchema = z.object({
+  SERVER: z.string().optional(),
+  status: z.literal('error'),
+  message: z.string(),
+  TS: z.string().optional(),
+});
+
 // Subscribe response
 export const LBankSubscribeResponseSchema = z.object({
   action: z.literal('subscribe'),
@@ -89,8 +97,9 @@ export const RawLBankDepthSchema = z.object({
 });
 
 // Union type for incoming messages
-export type RawLBankMessage = 
+export type RawLBankMessage =
   | z.infer<typeof LBankPingSchema>
   | z.infer<typeof LBankSubscribeResponseSchema>
+  | z.infer<typeof LBankErrorMessageSchema>
   | z.infer<typeof RawLBankTickerSchema>
   | z.infer<typeof RawLBankDepthSchema>;
