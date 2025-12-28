@@ -93,6 +93,7 @@ interface MarketState {
 interface SystemStatus {
   ts: string;
   lbank_gateway?: ServiceHealth;
+  latoken_gateway?: ServiceHealth;
   uniswap_quote_csr25?: ServiceHealth;
   uniswap_quote_csr?: ServiceHealth;
   strategy_engine?: ServiceHealth;
@@ -221,6 +222,14 @@ function MarketCard({
                   ${formatPrice(latoken.last)}
                 </span>
               </div>
+              {latoken.volume_24h !== undefined && (
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Volume 24h</span>
+                  <span className="font-mono text-sm">
+                    {latoken.volume_24h.toLocaleString()}
+                  </span>
+                </div>
+              )}
               <div className="text-xs text-green-400 mt-2">
                 LATOKEN: Live data
               </div>
@@ -497,7 +506,7 @@ function App() {
         <h2 className="text-xl font-semibold mb-4 text-slate-300">
           System Status
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
             <div className="flex items-center justify-between mb-2">
               <span className="text-slate-400">Overall</span>
@@ -511,6 +520,16 @@ function App() {
               <span className="text-slate-400">LBank Gateway</span>
               <StatusBadge
                 status={data?.system_status.lbank_gateway?.status || "unknown"}
+              />
+            </div>
+          </div>
+          <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-slate-400">LATOKEN Gateway</span>
+              <StatusBadge
+                status={
+                  data?.system_status.latoken_gateway?.status || "unknown"
+                }
               />
             </div>
           </div>

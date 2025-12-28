@@ -55,6 +55,7 @@ interface DashboardData {
   system_status: {
     ts: string;
     lbank_gateway: ServiceHealth;
+    latoken_gateway: ServiceHealth;
     uniswap_quote_csr25: ServiceHealth;
     uniswap_quote_csr: ServiceHealth;
     strategy_engine: ServiceHealth;
@@ -70,6 +71,15 @@ let dashboardData: DashboardData = {
     ts: new Date().toISOString(),
     lbank_gateway: {
       service: "lbank-gateway",
+      status: "unknown",
+      ts: new Date().toISOString(),
+      is_stale: true,
+      connected: false,
+      reconnect_count: 0,
+      errors_last_5m: 0,
+    },
+    latoken_gateway: {
+      service: "latoken-gateway",
       status: "unknown",
       ts: new Date().toISOString(),
       is_stale: true,
@@ -138,6 +148,33 @@ async function fetchServiceData() {
     } catch {
       lbankHealth = {
         service: "lbank-gateway",
+        status: "error",
+        ts: now,
+        is_stale: true,
+        connected: false,
+        reconnect_count: 0,
+        errors_last_5m: 0,
+      };
+    }
+
+    // Fetch LATOKEN Gateway health
+    let latokenHealth: ServiceHealth;
+    try {
+      const resp = await httpClient.get(`${LATOKEN_GATEWAY_URL}/ready`);
+      const data = resp.data;
+      latokenHealth = {
+        service: "latoken-gateway",
+        status: data.status || "unknown",
+        ts: data.ts || now,
+        is_stale: data.is_stale || false,
+        connected: data.running || false,
+        last_message_ts: data.last_data_ts,
+        reconnect_count: 0,
+        errors_last_5m: 0,
+      };
+    } catch {
+      latokenHealth = {
+        service: "latoken-gateway",
         status: "error",
         ts: now,
         is_stale: true,
@@ -254,6 +291,7 @@ async function fetchServiceData() {
     // Determine overall status
     const statuses = [
       lbankHealth?.status || "error",
+      latokenHealth?.status || "error",
       uniswapHealthCSR25?.status || "error",
       uniswapHealthCSR?.status || "error",
       strategyHealth?.status || "error",
@@ -283,6 +321,7 @@ async function fetchServiceData() {
       system_status: {
         ts: now,
         lbank_gateway: lbankHealth,
+        latoken_gateway: latokenHealth,
         uniswap_quote_csr25: uniswapHealthCSR25,
         uniswap_quote_csr: uniswapHealthCSR,
         strategy_engine: strategyHealth,

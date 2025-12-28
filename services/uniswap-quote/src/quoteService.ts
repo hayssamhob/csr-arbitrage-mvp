@@ -154,20 +154,18 @@ export class QuoteService {
     const targetToken =
       this.tokenOut.symbol === "CSR" ? this.csrToken : this.csr25Token;
 
-    // Step A: Try to fetch pool by ID
-    let pool = await this.v4Reader.fetchPoolById(this.poolId);
+    // Fetch pool by token addresses (V4 subgraph uses currency0/currency1)
+    const pool = await this.v4Reader.fetchPoolByTokens(
+      targetToken.address,
+      this.usdtToken.address
+    );
 
-    // Step B: If not found, discover by token addresses
     if (!pool) {
-      this.onLog("info", "pool_not_found_by_id_discovering", {
-        poolId: this.poolId,
+      this.onLog("info", "pool_not_found", {
         token: targetToken.symbol,
+        tokenAddress: targetToken.address,
+        usdtAddress: this.usdtToken.address,
       });
-
-      pool = await this.v4Reader.discoverPoolByTokens(
-        this.usdtToken,
-        targetToken
-      );
     }
 
     if (!pool) {
@@ -195,10 +193,11 @@ export class QuoteService {
     }
 
     // Step C: Compute USDT per token price
-    const priceUsdtPerToken = this.v4Reader.computeUsdtPrice(
+    const priceUsdtPerToken = this.v4Reader.computePrice(
       pool,
-      this.usdtToken,
-      targetToken
+      this.usdtToken.address,
+      this.usdtToken.decimals,
+      targetToken.decimals
     );
 
     // Safety validation
@@ -240,10 +239,10 @@ export class QuoteService {
     this.onLog("info", "v4_subgraph_quote", {
       source: "uniswap_v4_subgraph",
       token: targetToken.symbol,
-      poolId: pool.id,
+      poolId: pool.poolId,
       price: priceUsdtPerToken,
-      liquidity: pool.liquidity,
-      sqrtPrice: pool.sqrtPrice,
+      sqrtPriceX96: pool.sqrtPriceX96,
+      tick: pool.tick,
       amountIn: amountUsdt,
       amountOut: outputAmount,
       executable: false,
@@ -261,8 +260,8 @@ export class QuoteService {
       effective_price_usdt: priceUsdtPerToken,
       estimated_gas: 0,
       route: {
-        summary: pool.id,
-        pools: [pool.id],
+        summary: pool.poolId,
+        pools: [pool.poolId],
       },
       is_stale: false,
       validated: true,
