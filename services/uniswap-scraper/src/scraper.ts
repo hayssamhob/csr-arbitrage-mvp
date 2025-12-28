@@ -269,7 +269,35 @@ export class UniswapScraper {
   }
 
   /**
-   * Scrape single quote - fast fail with timeout
+   * Check for error states in the UI (insufficient liquidity, no route, etc.)
+   */
+  private async checkErrorState(page: Page): Promise<string | null> {
+    try {
+      return await page.evaluate(() => {
+        const errorPatterns = [
+          "insufficient liquidity",
+          "no route",
+          "price impact too high",
+          "unable to quote",
+          "error fetching",
+          "token not found",
+          "pool not found",
+        ];
+        const bodyText = document.body.innerText.toLowerCase();
+        for (const pattern of errorPatterns) {
+          if (bodyText.includes(pattern)) {
+            return pattern;
+          }
+        }
+        return null;
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Scrape single quote - fast fail with timeout and error detection
    */
   async scrapeQuote(
     token: TokenSymbol,
@@ -287,9 +315,26 @@ export class UniswapScraper {
     }
 
     const startTime = Date.now();
-    const perQuoteTimeout = 4000; // 4 second max per quote
+    const perQuoteTimeout = 5000; // 5 second max per quote
 
     try {
+      // Check for error state first (fail-fast)
+      const errorState = await this.checkErrorState(page);
+      if (errorState) {
+        this.onLog("warn", "error_state_detected", {
+          token,
+          amountUsdt,
+          errorState,
+        });
+        return this.createInvalidQuote(
+          token,
+          amountUsdt,
+          "ui_changed",
+          `UI error: ${errorState}`,
+          Date.now() - startTime
+        );
+      }
+
       // Find input fields
       const inputSelector = 'input[inputmode="decimal"]';
       const inputs = await page.$$(inputSelector);
@@ -327,9 +372,26 @@ export class UniswapScraper {
         );
       }
 
-      // Wait for output change (max 3s)
+      // Wait for output change (max 4s)
       const { value: outputAfter, raw: outputRaw } =
-        await this.waitForOutputChange(page, outputBefore, 3000);
+        await this.waitForOutputChange(page, outputBefore, 4000);
+
+      // Check for error state after input (insufficient liquidity may appear now)
+      const postErrorState = await this.checkErrorState(page);
+      if (postErrorState) {
+        this.onLog("warn", "post_input_error_detected", {
+          token,
+          amountUsdt,
+          errorState: postErrorState,
+        });
+        return this.createInvalidQuote(
+          token,
+          amountUsdt,
+          "ui_changed",
+          `UI error after input: ${postErrorState}`,
+          Date.now() - startTime
+        );
+      }
 
       if (outputAfter === null || outputAfter <= 0) {
         return this.createInvalidQuote(
@@ -410,10 +472,16 @@ export class UniswapScraper {
     value: number
   ): Promise<string> {
     try {
+      // Click to focus and triple-click to select all
       await inputField.click({ clickCount: 3 });
-      await page.keyboard.press("Backspace");
-      await inputField.type(value.toString(), { delay: 15 });
 
+      // Small delay for UI to register selection
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Type the new value (this replaces selection)
+      await inputField.type(value.toString(), { delay: 20 });
+
+      // Dispatch React events to trigger state update
       await inputField.evaluate((el: HTMLInputElement, val: string) => {
         const setter = Object.getOwnPropertyDescriptor(
           window.HTMLInputElement.prototype,
@@ -424,6 +492,9 @@ export class UniswapScraper {
         el.dispatchEvent(new Event("change", { bubbles: true }));
         el.blur();
       }, value.toString());
+
+      // Small delay to let React process
+      await new Promise((r) => setTimeout(r, 100));
 
       return "success";
     } catch (error) {
