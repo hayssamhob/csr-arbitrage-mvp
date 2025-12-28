@@ -1,8 +1,8 @@
 import { ethers } from "ethers";
 import { Config, TokenConfig } from "./config";
+import { DefiLlamaService } from "./defiLlamaService";
 import { QuoterV2Service } from "./quoterV2Service";
 import { CachedQuote, UniswapQuoteResult } from "./schemas";
-import { UniswapApiService } from "./uniswapApiService";
 import { V4SubgraphGatewayReader } from "./v4SubgraphGatewayReader";
 
 // ============================================================================
@@ -37,7 +37,7 @@ export class QuoteService {
   private poolId: string;
   private v4Reader: V4SubgraphGatewayReader;
   private quoterV2: QuoterV2Service;
-  private uniswapApi: UniswapApiService;
+  private defiLlama: DefiLlamaService;
   private usdtToken: TokenConfig;
   private csrToken: TokenConfig;
   private csr25Token: TokenConfig;
@@ -50,8 +50,8 @@ export class QuoteService {
     // Initialize provider - REAL ON-CHAIN DATA ONLY
     this.provider = new ethers.providers.JsonRpcProvider(config.RPC_URL);
 
-    // Initialize Uniswap API service (PRIMARY SOURCE - same as Uniswap UI)
-    this.uniswapApi = new UniswapApiService(onLog);
+    // Initialize DeFi Llama service (PRIMARY SOURCE - real market prices)
+    this.defiLlama = new DefiLlamaService(onLog);
 
     // Initialize QuoterV2 for on-chain quotes (FALLBACK 1)
     this.quoterV2 = new QuoterV2Service(
@@ -171,33 +171,25 @@ export class QuoteService {
       this.tokenOut.symbol === "CSR" ? this.csrToken : this.csr25Token;
     const tokenType = targetToken.symbol === "CSR" ? "CSR" : "CSR25";
 
-    // PRIMARY: Try Uniswap API (same as Uniswap UI)
+    // PRIMARY: Try DeFi Llama for real market prices
     try {
-      const apiResult =
-        direction === "buy"
-          ? await this.uniswapApi.getQuoteBuy(
-              tokenType as "CSR" | "CSR25",
-              amountUsdt
-            )
-          : await this.uniswapApi.getQuoteSell(
-              tokenType as "CSR" | "CSR25",
-              amountUsdt
-            );
+      const priceResult = await this.defiLlama.getTokenPrice(
+        tokenType as "CSR" | "CSR25"
+      );
 
-      if (!apiResult.error && apiResult.price > 0) {
-        this.onLog("info", "uniswap_api_success", {
+      if (!priceResult.error && priceResult.price > 0) {
+        this.onLog("info", "defillama_success", {
           token: targetToken.symbol,
-          price: apiResult.price,
-          priceImpact: apiResult.priceImpact,
-          gasFeeUSD: apiResult.gasFeeUSD,
+          price: priceResult.price,
+          confidence: priceResult.confidence,
         });
 
         // Calculate output amount
         let outputAmount: number;
         if (direction === "buy") {
-          outputAmount = amountUsdt / apiResult.price;
+          outputAmount = amountUsdt / priceResult.price;
         } else {
-          outputAmount = amountUsdt * apiResult.price;
+          outputAmount = amountUsdt * priceResult.price;
         }
 
         return {
@@ -209,22 +201,21 @@ export class QuoteService {
           amount_in_unit: direction === "buy" ? "USDT" : targetToken.symbol,
           amount_out: outputAmount.toFixed(6),
           amount_out_unit: direction === "buy" ? targetToken.symbol : "USDT",
-          effective_price_usdt: apiResult.price,
-          estimated_gas: Math.round(apiResult.gasFeeUSD * 100), // Approximate gas units
+          effective_price_usdt: priceResult.price,
+          estimated_gas: 150000, // Standard gas estimate
           pool_fee: 0.3, // Standard fee
-          price_impact: apiResult.priceImpact,
           is_stale: false,
           validated: true,
-          source: "uniswap_api",
+          source: "defillama",
         };
       }
 
-      this.onLog("warn", "uniswap_api_failed_trying_quoter", {
+      this.onLog("warn", "defillama_failed_trying_quoter", {
         token: targetToken.symbol,
-        error: apiResult.error,
+        error: priceResult.error,
       });
     } catch (apiError) {
-      this.onLog("warn", "uniswap_api_exception", {
+      this.onLog("warn", "defillama_exception", {
         error: apiError instanceof Error ? apiError.message : String(apiError),
       });
     }
