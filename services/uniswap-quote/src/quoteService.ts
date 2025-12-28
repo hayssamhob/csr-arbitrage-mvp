@@ -1,12 +1,14 @@
 import { ethers } from "ethers";
 import { Config, TokenConfig } from "./config";
+import { QuoterV2Service } from "./quoterV2Service";
 import { CachedQuote, UniswapQuoteResult } from "./schemas";
 import { V4SubgraphGatewayReader } from "./v4SubgraphGatewayReader";
 
 // ============================================================================
-// Uniswap Quote Service - Simplified Implementation
-// READ-ONLY: Attempts to read pool state, falls back to token validation
-// No execution, no routing, no mock data
+// Uniswap Quote Service - Uses QuoterV2 for Real On-Chain Prices
+// READ-ONLY: Returns actual executable swap prices from Uniswap
+// Falls back to V4 subgraph if QuoterV2 fails
+// No execution, no signing.
 // ============================================================================
 
 // Minimal ERC20 ABI to verify token exists
@@ -33,6 +35,7 @@ export class QuoteService {
   private readonly onLog: LogFn;
   private poolId: string;
   private v4Reader: V4SubgraphGatewayReader;
+  private quoterV2: QuoterV2Service;
   private usdtToken: TokenConfig;
   private csrToken: TokenConfig;
   private csr25Token: TokenConfig;
@@ -45,7 +48,15 @@ export class QuoteService {
     // Initialize provider - REAL ON-CHAIN DATA ONLY
     this.provider = new ethers.providers.JsonRpcProvider(config.RPC_URL);
 
-    // Initialize V4 subgraph reader with Graph Gateway
+    // Initialize QuoterV2 for real on-chain quotes (PRIMARY SOURCE)
+    this.quoterV2 = new QuoterV2Service(
+      config.RPC_URL,
+      config.CSR_CONFIG.address,
+      config.CSR25_CONFIG.address,
+      onLog
+    );
+
+    // Initialize V4 subgraph reader as fallback
     const subgraphUrl = `https://gateway.thegraph.com/api/${config.GRAPH_API_KEY}/subgraphs/id/${config.UNISWAP_V4_SUBGRAPH_ID}`;
     this.v4Reader = new V4SubgraphGatewayReader(subgraphUrl);
 
@@ -67,12 +78,12 @@ export class QuoteService {
       throw new Error(`Unsupported token: ${this.tokenOut.symbol}`);
     }
 
-    this.onLog("info", "uniswap_v4_subgraph_service_initialized", {
+    this.onLog("info", "uniswap_quote_service_initialized", {
       chainId: this.chainId,
       tokenIn: this.tokenIn.symbol,
       tokenOut: this.tokenOut.symbol,
       poolId: this.poolId,
-      source: "uniswap_v4_subgraph",
+      source: "quoter_v2_primary",
     });
   }
 
@@ -153,20 +164,74 @@ export class QuoteService {
     // Determine which token we're quoting
     const targetToken =
       this.tokenOut.symbol === "CSR" ? this.csrToken : this.csr25Token;
+    const tokenType = targetToken.symbol === "CSR" ? "CSR" : "CSR25";
 
-    // Fetch pool by token addresses (V4 subgraph uses currency0/currency1)
+    // PRIMARY: Try QuoterV2 for real on-chain quotes
+    try {
+      const quoterResult =
+        direction === "buy"
+          ? await this.quoterV2.getQuoteBuy(
+              tokenType as "CSR" | "CSR25",
+              amountUsdt
+            )
+          : await this.quoterV2.getQuoteSell(
+              tokenType as "CSR" | "CSR25",
+              amountUsdt
+            );
+
+      if (!quoterResult.error && quoterResult.effectivePrice > 0) {
+        this.onLog("info", "quoter_v2_success", {
+          token: targetToken.symbol,
+          price: quoterResult.effectivePrice,
+          fee: quoterResult.fee,
+          gasEstimate: quoterResult.gasEstimate,
+        });
+
+        // Calculate output amount
+        let outputAmount: number;
+        if (direction === "buy") {
+          outputAmount = amountUsdt / quoterResult.effectivePrice;
+        } else {
+          outputAmount = amountUsdt * quoterResult.effectivePrice;
+        }
+
+        return {
+          type: "uniswap.quote",
+          pair: `${targetToken.symbol}/USDT`,
+          chain_id: this.chainId,
+          ts: now,
+          amount_in: amountUsdt.toString(),
+          amount_in_unit: direction === "buy" ? "USDT" : targetToken.symbol,
+          amount_out: outputAmount.toFixed(6),
+          amount_out_unit: direction === "buy" ? targetToken.symbol : "USDT",
+          effective_price_usdt: quoterResult.effectivePrice,
+          estimated_gas: quoterResult.gasEstimate,
+          pool_fee: quoterResult.fee,
+          price_impact: quoterResult.priceImpact,
+          is_stale: false,
+          validated: true,
+          source: "quoter_v2",
+        };
+      }
+
+      this.onLog("warn", "quoter_v2_failed_trying_subgraph", {
+        token: targetToken.symbol,
+        error: quoterResult.error,
+      });
+    } catch (quoterError) {
+      this.onLog("warn", "quoter_v2_exception", {
+        error:
+          quoterError instanceof Error
+            ? quoterError.message
+            : String(quoterError),
+      });
+    }
+
+    // FALLBACK: Try V4 subgraph
     const pool = await this.v4Reader.fetchPoolByTokens(
       targetToken.address,
       this.usdtToken.address
     );
-
-    if (!pool) {
-      this.onLog("info", "pool_not_found", {
-        token: targetToken.symbol,
-        tokenAddress: targetToken.address,
-        usdtAddress: this.usdtToken.address,
-      });
-    }
 
     if (!pool) {
       this.onLog("warn", "pool_not_found", {
@@ -185,10 +250,10 @@ export class QuoteService {
         amount_out_unit: targetToken.symbol,
         effective_price_usdt: 0,
         estimated_gas: 0,
-        error: "Pool not found",
+        error: "No liquidity found",
         is_stale: true,
         validated: false,
-        source: "uniswap_v4_subgraph",
+        source: "none",
       };
     }
 

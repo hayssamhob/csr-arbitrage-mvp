@@ -16,6 +16,8 @@ export const UniswapQuoteResultSchema = z.object({
   amount_out_unit: z.string(),
   effective_price_usdt: z.number(),
   estimated_gas: z.number(),
+  pool_fee: z.number().optional(), // Pool fee in percentage (e.g., 0.3 for 0.3%)
+  price_impact: z.number().optional(), // Price impact in percentage
   route: z
     .object({
       summary: z.string(),
