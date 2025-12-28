@@ -66,8 +66,19 @@ interface StrategyDecision {
   reason: string;
 }
 
+interface LatokenTicker {
+  type: string;
+  symbol: string;
+  ts: string;
+  bid: number;
+  ask: number;
+  last: number;
+  volume_24h?: number;
+}
+
 interface MarketData {
   lbank_ticker?: LBankTicker;
+  latoken_ticker?: LatokenTicker;
   uniswap_quote?: UniswapQuote;
   decision?: StrategyDecision;
 }
@@ -154,6 +165,7 @@ function MarketCard({
   lbankHealth?: ServiceHealth;
 }) {
   const lbank = market.lbank_ticker;
+  const latoken = market.latoken_ticker;
   const uniswap = market.uniswap_quote;
   const decision = market.decision as ExtendedDecision | undefined;
 
@@ -177,37 +189,40 @@ function MarketCard({
       <div className="mb-4 p-4 bg-slate-900 rounded-lg">
         <div className="flex items-center justify-between mb-2">
           <span className="text-slate-400 font-medium">{cexSource} (CEX)</span>
-          {lbank && cexSource === "LBANK" && (
+          {latoken && isCSR && (
+            <span className="text-xs text-slate-500">
+              {timeAgo(latoken.ts)}
+            </span>
+          )}
+          {lbank && !isCSR && (
             <span className="text-xs text-slate-500">{timeAgo(lbank.ts)}</span>
           )}
         </div>
 
-        {/* CSR on LATOKEN - show data if available */}
+        {/* CSR on LATOKEN - show data from latoken_ticker */}
         {isCSR ? (
-          decision && (decision.lbank_bid || decision.lbank_ask) ? (
+          latoken ? (
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-slate-400">Bid</span>
                 <span className="font-mono text-green-400">
-                  {decision.lbank_bid ? decision.lbank_bid.toFixed(4) : "-"}
+                  ${formatPrice(latoken.bid)}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Ask</span>
                 <span className="font-mono text-red-400">
-                  {decision.lbank_ask ? decision.lbank_ask.toFixed(4) : "-"}
+                  ${formatPrice(latoken.ask)}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Last</span>
                 <span className="font-mono text-white">
-                  {decision.lbank_bid && decision.lbank_ask
-                    ? ((decision.lbank_bid + decision.lbank_ask) / 2).toFixed(4)
-                    : "-"}
+                  ${formatPrice(latoken.last)}
                 </span>
               </div>
               <div className="text-xs text-green-400 mt-2">
-S                LATOKEN: Live data
+                LATOKEN: Live data
               </div>
             </div>
           ) : (

@@ -311,11 +311,13 @@ async function main(): Promise<void> {
       ts: new Date().toISOString(),
       csr_usdt: {
         lbank_ticker: state.csr_usdt.lbankTicker,
+        latoken_ticker: state.csr_usdt.latokenTicker,
         uniswap_quote: state.csr_usdt.uniswapQuote,
         decision: state.csr_usdt.decision,
       },
       csr25_usdt: {
         lbank_ticker: state.csr25_usdt.lbankTicker,
+        latoken_ticker: state.csr25_usdt.latokenTicker,
         uniswap_quote: state.csr25_usdt.uniswapQuote,
         decision: state.csr25_usdt.decision,
       },
