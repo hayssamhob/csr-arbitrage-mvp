@@ -3,6 +3,18 @@ import { useEffect, useState } from "react";
 // In production (behind nginx), use relative URLs. In dev, use localhost.
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "" : "http://localhost:8001");
 
+// WebSocket URL needs full origin in production
+function getWsUrl(): string {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL.replace("http", "ws") + "/ws";
+  }
+  if (import.meta.env.PROD) {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${window.location.host}/ws`;
+  }
+  return "ws://localhost:8001/ws";
+}
+
 interface ServiceHealth {
   service: string;
   status: string;
@@ -390,7 +402,7 @@ function App() {
     let ws: WebSocket | null = null;
 
     function connect() {
-      ws = new WebSocket(`${API_URL.replace("http", "ws")}/ws`);
+      ws = new WebSocket(getWsUrl());
 
       ws.onopen = () => {
         setError(null);
