@@ -17,6 +17,15 @@ declare global {
       isMetaMask?: boolean;
       isRabby?: boolean;
       isCoinbaseWallet?: boolean;
+      providers?: Array<{
+        isMetaMask?: boolean;
+        isRabby?: boolean;
+        isCoinbaseWallet?: boolean;
+        request: (args: {
+          method: string;
+          params?: unknown[];
+        }) => Promise<unknown>;
+      }>;
     };
   }
 }
@@ -70,7 +79,19 @@ export function useWallet() {
     setState((prev) => ({ ...prev, isConnecting: true, error: null }));
 
     try {
-      const ethereum = window.ethereum!;
+      // Handle multiple wallet providers (e.g., when both Rabby and MetaMask are installed)
+      let ethereum = window.ethereum!;
+
+      // If there are multiple providers, try to find Rabby or use first available
+      if (ethereum.providers && ethereum.providers.length > 0) {
+        const rabbyProvider = ethereum.providers.find((p) => p.isRabby);
+        const metaMaskProvider = ethereum.providers.find(
+          (p) => p.isMetaMask && !p.isRabby
+        );
+        ethereum = (rabbyProvider ||
+          metaMaskProvider ||
+          ethereum.providers[0]) as typeof ethereum;
+      }
 
       // Request account access - this triggers the wallet popup
       const accounts = (await ethereum.request({

@@ -1025,7 +1025,18 @@ function App() {
               {data.opportunities.map((opp, i) => (
                 <div
                   key={i}
-                  className="bg-gradient-to-r from-emerald-900/40 to-green-900/20 border border-emerald-500/50 rounded-lg p-4 shadow-lg shadow-emerald-500/10"
+                  onClick={() => {
+                    const token = opp.symbol.includes("csr25")
+                      ? "CSR25"
+                      : "CSR";
+                    const direction =
+                      opp.direction === "buy_dex_sell_cex" ? "buy" : "sell";
+                    setShowTradePanel({
+                      token: token as "CSR" | "CSR25",
+                      direction: direction as "buy" | "sell",
+                    });
+                  }}
+                  className="bg-gradient-to-r from-emerald-900/40 to-green-900/20 border border-emerald-500/50 rounded-lg p-4 shadow-lg shadow-emerald-500/10 cursor-pointer hover:border-emerald-400 hover:shadow-emerald-500/30 transition-all"
                 >
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-3">
@@ -1033,17 +1044,45 @@ function App() {
                         {opp.symbol.toUpperCase()}
                       </span>
                       <span className="px-2 py-1 bg-slate-700/50 rounded text-slate-300 text-sm">
-                        {opp.direction}
+                        {opp.direction === "buy_dex_sell_cex"
+                          ? "Buy DEX → Sell CEX"
+                          : "Buy CEX → Sell DEX"}
                       </span>
                     </div>
                     <div className="text-right flex items-center gap-4">
-                      <span className="text-emerald-400 font-bold text-lg">
-                        +{opp.edge_after_costs_bps.toFixed(1)} bps
-                      </span>
+                      <div className="text-right">
+                        <div className="text-emerald-400 font-bold text-lg">
+                          +{opp.edge_after_costs_bps.toFixed(1)} bps
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Raw: {opp.raw_spread_bps.toFixed(0)} − Costs:{" "}
+                          {opp.estimated_cost_bps.toFixed(0)}
+                        </div>
+                      </div>
                       <span className="text-slate-400 bg-slate-800/50 px-2 py-1 rounded">
                         ${opp.suggested_size_usdt}
                       </span>
+                      <span className="text-emerald-400 text-xl">→</span>
                     </div>
+                  </div>
+                  {/* Fees breakdown */}
+                  <div className="mt-2 pt-2 border-t border-slate-700/50 text-xs text-slate-500 flex flex-wrap gap-3">
+                    <span>
+                      CEX Fee: {opp.cost_breakdown?.cex_fee_bps || 20} bps
+                    </span>
+                    <span>
+                      DEX LP: {opp.cost_breakdown?.dex_lp_fee_bps || 30} bps
+                    </span>
+                    <span>
+                      Gas: {opp.cost_breakdown?.gas_cost_bps?.toFixed(1) || 50}{" "}
+                      bps
+                    </span>
+                    <span>
+                      Slippage: {opp.cost_breakdown?.slippage_bps || 10} bps
+                    </span>
+                    <span className="ml-auto text-emerald-500/70">
+                      Click to trade →
+                    </span>
                   </div>
                 </div>
               ))}
