@@ -15,6 +15,7 @@ import {
   type ServiceStatus,
 } from "./components/GlobalStatusBar";
 import { MarketContextCard } from "./components/MarketContextCard";
+import { QuoteLadder } from "./components/QuoteLadder";
 import { UniswapTradePanel } from "./components/UniswapTradePanel";
 import { useWallet } from "./hooks/useWallet";
 import type { DexQuote } from "./lib/alignmentEngine";
