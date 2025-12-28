@@ -604,6 +604,8 @@ export class UniswapScraper {
   /**
    * Set input value using ONLY native setter + event dispatch
    * DO NOT use input.type() - it's unreliable
+   *
+   * CRITICAL: Must fully reset input to prevent stale quote carryover
    */
   private async setInputValue(
     page: Page,
@@ -620,18 +622,48 @@ export class UniswapScraper {
         return `input_not_editable: ${reason}`;
       }
 
-      // Step 2: Focus the input by clicking
-      await inputField.click();
+      // Step 2: CRITICAL - First reset to empty to clear any stale React state
+      await inputField.click({ clickCount: 3 }); // Triple-click to select all
+      await page.waitForTimeout(30);
+
+      // Use keyboard to delete selected text
+      await page.keyboard.press("Backspace");
       await page.waitForTimeout(50);
 
-      // Step 3: Clear and set value using NATIVE SETTER ONLY (no typing)
+      // Step 3: Set to "0" first and wait for output to clear
+      const resetResult = await inputField.evaluate((el: HTMLInputElement) => {
+        try {
+          el.focus();
+          const setter = Object.getOwnPropertyDescriptor(
+            window.HTMLInputElement.prototype,
+            "value"
+          )?.set;
+          if (!setter) return "no_setter";
+
+          // Set to empty string
+          setter.call(el, "");
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+
+          return "ok";
+        } catch (e) {
+          return "reset_error: " + String(e);
+        }
+      });
+
+      if (resetResult !== "ok") {
+        return resetResult;
+      }
+
+      // Wait for output field to reset (should become empty or 0)
+      await page.waitForTimeout(300);
+
+      // Step 4: Now set the actual value
       const setResult = await inputField.evaluate(
         (el: HTMLInputElement, val: string) => {
           try {
-            // Focus
             el.focus();
 
-            // Get native setter
             const setter = Object.getOwnPropertyDescriptor(
               window.HTMLInputElement.prototype,
               "value"
@@ -641,18 +673,15 @@ export class UniswapScraper {
               return "no_setter";
             }
 
-            // Clear first
-            setter.call(el, "");
-            el.dispatchEvent(new Event("input", { bubbles: true }));
-
-            // Small delay
             // Set new value
             setter.call(el, val);
 
             // Dispatch all events React needs
             el.dispatchEvent(new Event("input", { bubbles: true }));
             el.dispatchEvent(new Event("change", { bubbles: true }));
-            el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true }));
+            el.dispatchEvent(
+              new KeyboardEvent("keyup", { bubbles: true, key: "Enter" })
+            );
 
             // Blur to trigger any onBlur handlers
             el.blur();
@@ -670,8 +699,8 @@ export class UniswapScraper {
         return setResult;
       }
 
-      // Step 4: Verify the value was set
-      await page.waitForTimeout(100);
+      // Step 5: Verify the value was set correctly
+      await page.waitForTimeout(150);
       const currentValue = await inputField.evaluate(
         (el: HTMLInputElement) => el.value
       );
