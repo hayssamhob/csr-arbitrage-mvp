@@ -7,20 +7,13 @@ import { TokenConfig } from './config';
 
 interface PoolData {
   id: string;
-  feeTier: string;
-  sqrtPrice: string;
+  poolId: string;
+  fee: string;
+  sqrtPriceX96: string;
   tick: string;
-  token0: {
-    id: string;
-    symbol: string;
-    decimals: string;
-  };
-  token1: {
-    id: string;
-    symbol: string;
-    decimals: string;
-  };
-  liquidity: string;
+  currency0: string;
+  currency1: string;
+  tickSpacing: string;
 }
 
 export class V4SubgraphGatewayReader {
@@ -35,20 +28,13 @@ export class V4SubgraphGatewayReader {
       query getPool($poolId: ID!) {
         pool(id: $poolId) {
           id
-          feeTier
-          sqrtPrice
+          poolId
+          fee
+          sqrtPriceX96
           tick
-          token0 {
-            id
-            symbol
-            decimals
-          }
-          token1 {
-            id
-            symbol
-            decimals
-          }
-          liquidity
+          currency0
+          currency1
+          tickSpacing
         }
       }
     `;
