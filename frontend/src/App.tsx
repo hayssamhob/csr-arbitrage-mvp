@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useUniswapSwap } from "./hooks/useUniswapSwap";
 import { useWallet } from "./hooks/useWallet";
 
 // In production (behind nginx), use relative URLs. In dev, use localhost.
@@ -249,11 +250,15 @@ function MarketCard({
   market,
   lbankHealth,
   priceHistory,
+  wallet,
+  onExecuteTrade,
 }: {
   title: string;
   market: MarketData;
   lbankHealth?: ServiceHealth;
   priceHistory?: PricePoint[];
+  wallet?: { isConnected: boolean; signer: unknown };
+  onExecuteTrade?: (direction: string, size: number, token: string) => void;
 }) {
   const lbank = market.lbank_ticker;
   const latoken = market.latoken_ticker;
@@ -616,25 +621,41 @@ function MarketCard({
                   </span>
                 </div>
                 <button
-                  className="w-full mt-3 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold transition-colors flex items-center justify-center gap-2"
+                  className={`w-full mt-3 px-4 py-2 ${
+                    wallet?.isConnected
+                      ? "bg-emerald-600 hover:bg-emerald-500"
+                      : "bg-slate-600 cursor-not-allowed"
+                  } text-white rounded-lg font-bold transition-colors flex items-center justify-center gap-2`}
+                  disabled={!wallet?.isConnected}
                   onClick={() => {
+                    if (!wallet?.isConnected) {
+                      alert("Please connect your wallet first");
+                      return;
+                    }
+                    const token = isCSR ? "CSR" : "CSR25";
                     const confirmed = window.confirm(
                       `⚠️ EXECUTE TRADE?\n\n` +
                         `Direction: ${decision.direction}\n` +
+                        `Token: ${token}\n` +
                         `Size: $${decision.suggested_size_usdt} USDT\n` +
                         `Expected Edge: ${decision.edge_after_costs_bps.toFixed(
                           1
                         )} bps\n\n` +
-                        `This will execute a REAL trade. Are you sure?`
+                        `This will execute a REAL trade on Uniswap. Are you sure?`
                     );
-                    if (confirmed) {
-                      alert(
-                        "🚧 Trade execution not yet implemented.\n\nThis requires wallet integration and smart contract interaction."
+                    if (confirmed && onExecuteTrade) {
+                      onExecuteTrade(
+                        decision.direction,
+                        decision.suggested_size_usdt,
+                        token
                       );
                     }
                   }}
                 >
-                  <span>⚡</span> Execute Trade
+                  <span>⚡</span>{" "}
+                  {wallet?.isConnected
+                    ? "Execute Trade"
+                    : "Connect Wallet First"}
                 </button>
               </>
             )}
@@ -664,6 +685,40 @@ function App() {
 
   // Wallet integration
   const wallet = useWallet();
+  const { executeSwap } = useUniswapSwap();
+
+  // Handle trade execution
+  const handleExecuteTrade = async (
+    direction: string,
+    size: number,
+    token: string
+  ) => {
+    if (!wallet.signer) {
+      alert("Wallet not connected");
+      return;
+    }
+
+    try {
+      const tokenType = token as "CSR" | "CSR25";
+      const isBuyDex = direction === "buy_dex_sell_cex";
+
+      const result = await executeSwap(wallet.signer, {
+        tokenIn: isBuyDex ? "USDT" : tokenType,
+        tokenOut: isBuyDex ? tokenType : "USDT",
+        amountIn: size.toString(),
+        slippageBps: 50, // 0.5% slippage
+      });
+
+      if (result.success) {
+        alert(`✅ Trade executed!\n\nTx: ${result.txHash}`);
+      } else {
+        alert(`Trade Info:\n\n${result.error}`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Trade failed";
+      alert(`❌ Error: ${message}`);
+    }
+  };
 
   // Fetch price history periodically
   useEffect(() => {
@@ -980,6 +1035,11 @@ function App() {
               }
               lbankHealth={data?.system_status.lbank_gateway}
               priceHistory={priceHistory.csr_usdt}
+              wallet={{
+                isConnected: wallet.isConnected,
+                signer: wallet.signer,
+              }}
+              onExecuteTrade={handleExecuteTrade}
             />
             <MarketCard
               title="CSR25 / USDT"
@@ -992,6 +1052,11 @@ function App() {
               }
               lbankHealth={data?.system_status.lbank_gateway}
               priceHistory={priceHistory.csr25_usdt}
+              wallet={{
+                isConnected: wallet.isConnected,
+                signer: wallet.signer,
+              }}
+              onExecuteTrade={handleExecuteTrade}
             />
           </div>
         </section>
