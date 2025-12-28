@@ -5,7 +5,7 @@
  * for maintaining DEX price aligned with CEX price.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 // Types (inline to avoid import issues)
 type BandStatus = "neutral" | "soft" | "hard";
@@ -56,7 +56,10 @@ const DEFAULT_CONFIG: AlignmentConfig = {
   mode: "off",
 };
 
-function classifyBand(deviationPercent: number, bands: AlignmentBands): BandStatus {
+function classifyBand(
+  deviationPercent: number,
+  bands: AlignmentBands
+): BandStatus {
   const absDeviation = Math.abs(deviationPercent);
   if (absDeviation <= bands.neutralPercent) return "neutral";
   if (absDeviation <= bands.softPercent) return "soft";
@@ -65,17 +68,23 @@ function classifyBand(deviationPercent: number, bands: AlignmentBands): BandStat
 
 function getBandColor(band: BandStatus): string {
   switch (band) {
-    case "neutral": return "text-emerald-400";
-    case "soft": return "text-yellow-400";
-    case "hard": return "text-red-400";
+    case "neutral":
+      return "text-emerald-400";
+    case "soft":
+      return "text-yellow-400";
+    case "hard":
+      return "text-red-400";
   }
 }
 
 function getBandBgColor(band: BandStatus): string {
   switch (band) {
-    case "neutral": return "bg-emerald-500/20 border-emerald-500/50";
-    case "soft": return "bg-yellow-500/20 border-yellow-500/50";
-    case "hard": return "bg-red-500/20 border-red-500/50";
+    case "neutral":
+      return "bg-emerald-500/20 border-emerald-500/50";
+    case "soft":
+      return "bg-yellow-500/20 border-yellow-500/50";
+    case "hard":
+      return "bg-red-500/20 border-red-500/50";
   }
 }
 
@@ -88,30 +97,25 @@ export function AlignmentPanel({
 }: AlignmentPanelProps) {
   // Use market in title
   const marketTitle = market.replace("_", "/");
-  const [selectedSize, setSelectedSize] = useState<number>(100);
 
-  // Available sizes from quotes
-  const availableSizes = useMemo(
-    () =>
-      quotes
-        .filter((q) => q.valid)
-        .map((q) => q.amountInUSDT)
-        .sort((a, b) => a - b),
-    [quotes]
-  );
+  // Get best reference quote (closest to $100 or first available)
+  const referenceQuote = useMemo(() => {
+    const valid = quotes.filter((q) => q.valid);
+    if (valid.length === 0) return null;
+    // Prefer quote closest to $100, otherwise first
+    return valid.find((q) => Math.abs(q.amountInUSDT - 100) < 10) || valid[0];
+  }, [quotes]);
 
-  // Selected quote
-  const selectedQuote = useMemo(
-    () => quotes.find((q) => q.amountInUSDT === selectedSize && q.valid),
-    [quotes, selectedSize]
-  );
+  // DEX price from reference quote
+  const dexPrice = referenceQuote?.price_usdt_per_token || 0;
 
-  // DEX price for selected size
-  const dexPrice = selectedQuote?.price_usdt_per_token || 0;
+  // Check if data is ready
+  const isDataReady = cexPrice > 0 && dexPrice > 0;
 
   // Price deviation
-  const deviationPercent =
-    cexPrice > 0 ? ((dexPrice - cexPrice) / cexPrice) * 100 : 0;
+  const deviationPercent = isDataReady
+    ? ((dexPrice - cexPrice) / cexPrice) * 100
+    : 0;
   const deviationBps = deviationPercent * 100;
 
   // Band classification
@@ -151,6 +155,24 @@ export function AlignmentPanel({
     return price.toFixed(2);
   };
 
+  if (!isDataReady) {
+    return (
+      <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700 opacity-70">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-sm font-semibold text-slate-300">
+            {marketTitle} Alignment
+          </h4>
+          <span className="text-xs px-2 py-0.5 rounded border border-slate-600 text-slate-500">
+            WAITING
+          </span>
+        </div>
+        <div className="text-center py-8 text-slate-500 text-sm">
+          Waiting for market data...
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
       <div className="flex items-center justify-between mb-3">
@@ -168,43 +190,23 @@ export function AlignmentPanel({
 
       {/* Price Comparison */}
       <div className="grid grid-cols-2 gap-3 mb-4">
-        <div>
-          <div className="text-xs text-slate-500">CEX Price ({cexSource})</div>
+        <div className="bg-slate-900/30 p-2 rounded">
+          <div className="text-xs text-slate-500 mb-1">CEX ({cexSource})</div>
           <div className="font-mono text-lg text-slate-200">
             ${formatPrice(cexPrice)}
           </div>
         </div>
-        <div>
-          <div className="text-xs text-slate-500">DEX Price (Uniswap)</div>
+        <div className="bg-slate-900/30 p-2 rounded">
+          <div className="text-xs text-slate-500 mb-1">DEX (Uniswap)</div>
           <div className="font-mono text-lg text-blue-400">
             ${formatPrice(dexPrice)}
           </div>
         </div>
       </div>
 
-      {/* Size Selector */}
-      <div className="mb-4">
-        <div className="text-xs text-slate-500 mb-1">Quote Size</div>
-        <div className="flex gap-1 flex-wrap">
-          {availableSizes.map((size) => (
-            <button
-              key={size}
-              onClick={() => setSelectedSize(size)}
-              className={`px-2 py-1 text-xs rounded transition-colors ${
-                selectedSize === size
-                  ? "bg-blue-600 text-white"
-                  : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-              }`}
-            >
-              ${size}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* Deviation */}
       <div className="mb-4 p-3 rounded bg-slate-900/50">
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center mb-2">
           <span className="text-sm text-slate-400">Price Deviation</span>
           <span
             className={`font-mono text-lg font-bold ${getBandColor(
@@ -213,14 +215,12 @@ export function AlignmentPanel({
           >
             {deviationPercent > 0 ? "+" : ""}
             {deviationPercent.toFixed(2)}%
-            <span className="text-xs ml-1">
-              ({deviationBps.toFixed(0)} bps)
-            </span>
           </span>
         </div>
 
         {/* Band Indicator */}
-        <div className="mt-2 relative h-2 bg-slate-700 rounded overflow-hidden">
+        <div className="relative h-2 bg-slate-700 rounded overflow-hidden mb-1">
+          {/* Neutral Band (Green) */}
           <div
             className="absolute h-full bg-emerald-500/50"
             style={{
@@ -228,6 +228,7 @@ export function AlignmentPanel({
               width: `${config.bands.neutralPercent * 20}%`,
             }}
           />
+          {/* Soft Band (Yellow) - Left */}
           <div
             className="absolute h-full bg-yellow-500/30"
             style={{
@@ -237,6 +238,7 @@ export function AlignmentPanel({
               }%`,
             }}
           />
+          {/* Soft Band (Yellow) - Right */}
           <div
             className="absolute h-full bg-yellow-500/30"
             style={{
@@ -248,7 +250,7 @@ export function AlignmentPanel({
           />
           {/* Current position marker */}
           <div
-            className="absolute w-1 h-full bg-white"
+            className="absolute w-1 h-full bg-white shadow-[0_0_4px_rgba(255,255,255,0.8)]"
             style={{
               left: `${Math.min(
                 Math.max(50 + deviationPercent * 10, 0),
@@ -258,52 +260,54 @@ export function AlignmentPanel({
             }}
           />
         </div>
-        <div className="flex justify-between text-xs text-slate-500 mt-1">
+        <div className="flex justify-between text-[10px] text-slate-500 font-mono">
           <span>-{config.bands.softPercent}%</span>
-          <span>0</span>
+          <span>Aligned</span>
           <span>+{config.bands.softPercent}%</span>
         </div>
       </div>
 
-      {/* Suggested Action */}
+      {/* Required Action / Restore Balance */}
       {bandStatus !== "neutral" && (
-        <div className={`p-3 rounded border ${getBandBgColor(bandStatus)}`}>
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-sm font-medium text-slate-200">
-              Suggested Action
+        <div className={`p-4 rounded border ${getBandBgColor(bandStatus)}`}>
+          <div className="flex justify-between items-center mb-3">
+            <span className="text-sm font-bold text-slate-200 flex items-center gap-2">
+              <span>⚖️</span> Restore Balance
             </span>
             <span
-              className={`text-xs px-2 py-0.5 rounded ${
+              className={`text-xs px-2 py-1 rounded font-bold ${
                 direction === "buy_dex" ? "bg-emerald-600" : "bg-red-600"
               } text-white`}
             >
-              {direction === "buy_dex" ? "BUY on DEX" : "SELL on DEX"}
+              {direction === "buy_dex" ? "BUY DEX" : "SELL DEX"}
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div>
-              <span className="text-slate-500">Size:</span>
-              <span className="ml-1 font-mono">
-                ${suggestedSizeUsdt.toFixed(0)}
+          <div className="bg-slate-900/50 rounded p-3 mb-3">
+            <div className="text-xs text-slate-400 mb-1">
+              Estimated Amount to Restore
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-xl font-mono font-bold text-white">
+                {suggestedSizeTokens.toFixed(2)} Tokens
+              </span>
+              <span className="text-sm font-mono text-slate-400">
+                (~${suggestedSizeUsdt.toFixed(0)})
               </span>
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-400">
             <div>
-              <span className="text-slate-500">Tokens:</span>
-              <span className="ml-1 font-mono">
-                {suggestedSizeTokens.toFixed(2)}
-              </span>
-            </div>
-            <div>
-              <span className="text-slate-500">Est. Cost:</span>
-              <span className="ml-1 font-mono">
+              Est. Cost:{" "}
+              <span className="text-slate-300 font-mono">
                 {totalCostBps.toFixed(0)} bps
               </span>
             </div>
             <div>
-              <span className="text-slate-500">Net Benefit:</span>
+              Net Benefit:{" "}
               <span
-                className={`ml-1 font-mono ${
+                className={`font-mono ${
                   netBenefitBps >= 0 ? "text-emerald-400" : "text-red-400"
                 }`}
               >
@@ -313,29 +317,22 @@ export function AlignmentPanel({
           </div>
 
           {!isEconomical && (
-            <div className="mt-2 text-xs text-yellow-400">
-              ⚠️ Trade may not be economical (net benefit &lt;{" "}
-              {config.minBenefitBps} bps)
+            <div className="mt-3 pt-2 border-t border-white/10 text-xs text-yellow-400 flex items-center gap-1">
+              <span>⚠️</span> Small mispricing - trade may not be profitable
             </div>
           )}
         </div>
       )}
 
       {bandStatus === "neutral" && (
-        <div className="p-3 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm">
-          ✓ Price within tolerance band - no action needed
+        <div className="p-4 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm flex items-center gap-2">
+          <span className="text-lg">✓</span>
+          <div>
+            <div className="font-bold">Prices Aligned</div>
+            <div className="text-emerald-400/70 text-xs">No action needed</div>
+          </div>
         </div>
       )}
-
-      {/* Mode Indicator */}
-      <div className="mt-3 flex items-center justify-between text-xs">
-        <span className="text-slate-500">
-          Mode: {config.mode.toUpperCase()}
-        </span>
-        <span className="text-slate-500">
-          Bands: ±{config.bands.neutralPercent}% / ±{config.bands.softPercent}%
-        </span>
-      </div>
     </div>
   );
 }
