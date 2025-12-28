@@ -1,8 +1,8 @@
 /**
  * QuoteLadder - Shows DEX quotes at multiple trade sizes
  * 
- * This is the "source of truth" - actual scraped quotes from Uniswap UI
- * at predefined USDT sizes (25, 50, 100, 250, 500, 1000).
+ * This is the "source of truth" - actual scraped quotes from Uniswap UI.
+ * Required trade sizes MUST come from this ladder, never invented.
  */
 
 import { useMemo } from "react";
@@ -10,9 +10,10 @@ import { useMemo } from "react";
 interface Quote {
   amountInUSDT: number;
   tokensOut: number;
-  executionPrice: number;    // USDT per token
-  gasEstimateUsdt: number;
+  executionPrice: number; // USDT per token
+  gasEstimateUsdt: number | null;
   valid: boolean;
+  reason?: string;
   timestamp?: number;
 }
 
@@ -23,7 +24,8 @@ interface QuoteLadderProps {
   direction: "BUY" | "SELL";
 }
 
-const LADDER_SIZES = [25, 50, 100, 250, 500, 1000];
+// Full ladder from $1 to $1000 as requested
+const LADDER_SIZES = [1, 5, 10, 25, 50, 100, 250, 500, 1000];
 
 export function QuoteLadder({ token, quotes, cexPrice, direction }: QuoteLadderProps) {
   // Map quotes by size for quick lookup
@@ -100,8 +102,8 @@ export function QuoteLadder({ token, quotes, cexPrice, direction }: QuoteLadderP
           const deviation = quote ? getDeviation(quote.executionPrice) : null;
           
           return (
-            <div 
-              key={size} 
+            <div
+              key={size}
               className={`grid grid-cols-5 gap-2 text-sm py-1.5 px-1 rounded ${
                 quote ? "hover:bg-slate-800/50" : "opacity-50"
               }`}
@@ -113,14 +115,20 @@ export function QuoteLadder({ token, quotes, cexPrice, direction }: QuoteLadderP
               <div className="text-right font-mono text-blue-400">
                 {quote ? `$${formatPrice(quote.executionPrice)}` : "—"}
               </div>
-              <div className={`text-right font-mono font-medium ${getDeviationColor(deviation)}`}>
-                {deviation !== null 
-                  ? `${deviation >= 0 ? "+" : ""}${deviation.toFixed(2)}%` 
+              <div
+                className={`text-right font-mono font-medium ${getDeviationColor(
+                  deviation
+                )}`}
+              >
+                {deviation !== null
+                  ? `${deviation >= 0 ? "+" : ""}${deviation.toFixed(2)}%`
                   : "—"}
               </div>
               <div className="text-right font-mono text-slate-500">
-                {quote && quote.gasEstimateUsdt > 0 
-                  ? `$${quote.gasEstimateUsdt.toFixed(2)}` 
+                {quote &&
+                quote.gasEstimateUsdt !== null &&
+                quote.gasEstimateUsdt > 0
+                  ? `$${quote.gasEstimateUsdt.toFixed(2)}`
                   : "—"}
               </div>
             </div>

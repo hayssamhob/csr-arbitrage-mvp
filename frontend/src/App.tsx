@@ -371,10 +371,14 @@ function App() {
     ];
   }, [data, scraperData]);
 
-  const handleAlignmentExecute = (direction: string, _tokenAmount: number) => {
-    const isBuy = direction === "BUY_ON_DEX";
+  const handleAlignmentExecute = (
+    token: "CSR" | "CSR25",
+    direction: string,
+    _usdtAmount: number
+  ) => {
+    const isBuy = direction === "BUY";
     setShowTradePanel({
-      token: "CSR25",
+      token,
       direction: isBuy ? "buy" : "sell",
     });
   };
@@ -542,9 +546,6 @@ function App() {
                   ? data.market_state?.csr_usdt?.latoken_ticker?.ask || 0
                   : data.market_state?.csr25_usdt?.lbank_ticker?.ask || 0
               }
-              signer={wallet.signer}
-              isConnected={wallet.isConnected}
-              onConnect={wallet.connect}
             />
           </div>
         </div>
@@ -655,10 +656,8 @@ function App() {
                 csrDexQuotes.length > 0
                   ? {
                       executionPrice: csrDexQuotes[0].executionPrice,
-                      gasEstimateUsdt: csrDexQuotes[0].gasEstimateUsdt,
-                      slippagePercent: csrDexQuotes[0].slippagePercent,
+                      gasEstimateUsdt: csrDexQuotes[0].gasEstimateUsdt || null,
                       quoteSize: csrDexQuotes[0].amountInUSDT,
-                      route: "Uniswap V3",
                       source: "UI Scrape",
                       timestamp: "live",
                     }
@@ -686,10 +685,9 @@ function App() {
                 csr25DexQuotes.length > 0
                   ? {
                       executionPrice: csr25DexQuotes[0].executionPrice,
-                      gasEstimateUsdt: csr25DexQuotes[0].gasEstimateUsdt,
-                      slippagePercent: csr25DexQuotes[0].slippagePercent,
+                      gasEstimateUsdt:
+                        csr25DexQuotes[0].gasEstimateUsdt || null,
                       quoteSize: csr25DexQuotes[0].amountInUSDT,
-                      route: "Uniswap V3",
                       source: "UI Scrape",
                       timestamp: "live",
                     }

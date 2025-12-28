@@ -35,8 +35,9 @@ export interface ScraperConfig {
 }
 
 export function loadConfig(): ScraperConfig {
-  // Reduced default sizes for faster cycles (target: <=30s per cycle)
-  const quoteSizesStr = process.env.QUOTE_SIZES_USDT || "50,100,250,500";
+  // Full ladder from $1 to $1000 per user request
+  const quoteSizesStr =
+    process.env.QUOTE_SIZES_USDT || "1,5,10,25,50,100,250,500,1000";
   const chromeArgsStr =
     process.env.CHROME_ARGS ||
     "--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu,--disable-software-rasterizer";

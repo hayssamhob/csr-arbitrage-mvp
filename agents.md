@@ -72,8 +72,9 @@ Responsibilities:
   - `strategy.decision` (dry-run)
 
 Hard limits:
-- never executes trades in MVP
+- build the app to execute real trades
 - only logs decisions
+- do not use any placeholders instead of real values
 
 ### 4) DashboardAgent (later)
 Responsibilities:
@@ -83,6 +84,7 @@ Responsibilities:
 ---
 
 ## Definition of Done (per change)
+
 - TypeScript builds cleanly
 - Service starts locally
 - Health endpoint returns OK

@@ -20,10 +20,8 @@ interface CexData {
 
 interface DexData {
   executionPrice: number;
-  gasEstimateUsdt: number;
-  slippagePercent: number;
+  gasEstimateUsdt: number | null; // null if not scraped
   quoteSize: number;
-  route: string;
   source: string;
   timestamp: string;
 }
@@ -64,7 +62,9 @@ export function MarketContextCard({
               Mid: ${formatPrice(cexMid)}
             </span>
           )}
-          <span className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}>
+          <span
+            className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}
+          >
             ▼
           </span>
         </div>
@@ -82,20 +82,26 @@ export function MarketContextCard({
                   <span className="text-emerald-400">{cexData.source}</span>
                 )}
               </div>
-              
+
               {cexData ? (
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-400">Bid</span>
-                    <span className="font-mono text-emerald-400">${formatPrice(cexData.bid)}</span>
+                    <span className="font-mono text-emerald-400">
+                      ${formatPrice(cexData.bid)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-400">Ask</span>
-                    <span className="font-mono text-red-400">${formatPrice(cexData.ask)}</span>
+                    <span className="font-mono text-red-400">
+                      ${formatPrice(cexData.ask)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-400">Last</span>
-                    <span className="font-mono text-slate-300">${formatPrice(cexData.last)}</span>
+                    <span className="font-mono text-slate-300">
+                      ${formatPrice(cexData.last)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm border-t border-slate-700 pt-2 mt-2">
                     <span className="text-slate-400">Volume 24h</span>
@@ -122,37 +128,29 @@ export function MarketContextCard({
                   <span className="text-blue-400">{dexData.source}</span>
                 )}
               </div>
-              
+
               {dexData ? (
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-400">Exec Price</span>
-                    <span className="font-mono text-blue-400">${formatPrice(dexData.executionPrice)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-400">Gas Est.</span>
-                    <span className="font-mono text-slate-300">
-                      ${dexData.gasEstimateUsdt.toFixed(2)}
+                    <span className="font-mono text-blue-400">
+                      ${formatPrice(dexData.executionPrice)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-400">Slippage</span>
-                    <span className="font-mono text-slate-300">
-                      {dexData.slippagePercent.toFixed(2)}%
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm border-t border-slate-700 pt-2 mt-2">
                     <span className="text-slate-400">Quote Size</span>
                     <span className="font-mono text-slate-300">
                       ${dexData.quoteSize}
                     </span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-400">Route</span>
-                    <span className="font-mono text-slate-400 text-xs truncate max-w-[120px]">
-                      {dexData.route}
-                    </span>
-                  </div>
+                  {dexData.gasEstimateUsdt !== null && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-400">Gas Est.</span>
+                      <span className="font-mono text-slate-300">
+                        ${dexData.gasEstimateUsdt.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
                   <div className="text-xs text-slate-600 text-right">
                     {dexData.timestamp}
                   </div>
