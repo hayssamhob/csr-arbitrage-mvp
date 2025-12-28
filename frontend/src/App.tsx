@@ -560,7 +560,7 @@ function App() {
               <img
                 src="/depollute-logo-256.png"
                 alt="Depollute Now!"
-                className="h-20 w-20 rounded-lg shadow-lg shadow-emerald-500/20"
+                className="h-32 w-32 rounded-lg shadow-lg shadow-emerald-500/20"
               />
               <div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-green-300 bg-clip-text text-transparent">
