@@ -40,8 +40,10 @@ export function UniswapTradePanel({
   const spread =
     cexPrice > 0 ? (((dexPrice - cexPrice) / cexPrice) * 100).toFixed(2) : "0";
 
-  // Get the HARDCODED correct URL for this token
-  const uniswapUrl = UNISWAP_URLS[token];
+  // Build URL with amount pre-filled
+  // Uniswap uses exactAmount parameter for v3/v4 interface
+  const baseUrl = UNISWAP_URLS[token];
+  const uniswapUrl = `${baseUrl}&exactField=input&exactAmount=${amount}`;
 
   return (
     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
