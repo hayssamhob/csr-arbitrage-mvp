@@ -1331,8 +1331,8 @@ app.get("/api/swaps/:token", async (req, res) => {
   }
 
   try {
-    // Query Etherscan for token transfers
-    const apiUrl = `https://api.etherscan.io/api?module=account&action=tokentx&contractaddress=${tokenAddress}&page=1&offset=100&sort=desc${
+    // Query Etherscan V2 API for token transfers (chainid=1 for Ethereum mainnet)
+    const apiUrl = `https://api.etherscan.io/v2/api?chainid=1&module=account&action=tokentx&contractaddress=${tokenAddress}&page=1&offset=100&sort=desc${
       ETHERSCAN_API_KEY ? `&apikey=${ETHERSCAN_API_KEY}` : ""
     }`;
 
