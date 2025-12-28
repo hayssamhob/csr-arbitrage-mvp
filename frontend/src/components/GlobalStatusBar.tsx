@@ -25,11 +25,7 @@ interface GlobalStatusBarProps {
   lastDataUpdate: Date;
 }
 
-// Freshness thresholds per product spec
-const FRESHNESS_THRESHOLDS = {
-  CEX: 30,  // CEX data stale after 30s
-  DEX: 60,  // DEX data stale after 60s
-};
+// Note: Freshness thresholds (CEX: 30s, DEX: 60s) are applied in App.tsx
 
 export function GlobalStatusBar({
   services,

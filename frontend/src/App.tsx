@@ -246,24 +246,12 @@ function App() {
     const uniswapTs = scraperData?.meta?.lastSuccessTs;
     const uniswapAge = getAge(uniswapTs);
     const uniswapStale = uniswapAge > FRESHNESS.DEX_STALE_SEC;
-    const uniswapErrors = scraperData?.meta?.errorsLast5m || 0;
     const csrQuotes =
       scraperData?.quotes?.filter((q) => q.market === "CSR_USDT" && q.valid)
         .length || 0;
     const csr25Quotes =
       scraperData?.quotes?.filter((q) => q.market === "CSR25_USDT" && q.valid)
         .length || 0;
-    const uniswapReason = !uniswapTs
-      ? "no scraper data"
-      : uniswapStale
-      ? `stale (${uniswapAge}s > ${FRESHNESS.DEX_STALE_SEC}s)`
-      : csrQuotes === 0
-      ? "CSR quotes missing"
-      : csr25Quotes === 0
-      ? "CSR25 quotes missing"
-      : uniswapErrors > 0
-      ? `${uniswapErrors} errors in 5m`
-      : undefined;
 
     // Strategy engine
     const strategyTs = data?.system_status?.strategy_engine?.ts;
@@ -518,7 +506,7 @@ function App() {
               />
               <div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-green-300 bg-clip-text text-transparent">
-                  DEX Price Defense
+                  CSR Arbitrage Hub
                 </h1>
                 <div className="text-slate-500 text-xs">
                   Depollute Now! • v2.0
