@@ -425,6 +425,62 @@ function MarketCard({
         )}
       </div>
 
+      {/* Arbitrage Calculator */}
+      {uniswap && (isCSR ? latoken : lbank) && (
+        <div className="mb-4 p-4 bg-slate-900 rounded-lg">
+          <div className="text-slate-400 font-medium mb-2">
+            Arbitrage Calculator
+          </div>
+          <div className="space-y-2 text-sm">
+            {(() => {
+              const cexPrice = isCSR
+                ? (latoken?.bid || 0 + (latoken?.ask || 0)) / 2
+                : (lbank?.bid || 0 + (lbank?.ask || 0)) / 2;
+              const dexPrice = uniswap.effective_price_usdt;
+              const priceDiff = cexPrice - dexPrice;
+              const buyOnDex = priceDiff > 0;
+
+              if (Math.abs(priceDiff) < 0.000001) {
+                return (
+                  <div className="text-slate-500">Prices are balanced</div>
+                );
+              }
+
+              const targetSize = 1000;
+              const tokensToTrade = targetSize / dexPrice;
+              const profitUsdt = Math.abs(priceDiff) * tokensToTrade;
+
+              return (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Strategy</span>
+                    <span
+                      className={
+                        buyOnDex ? "text-emerald-400" : "text-blue-400"
+                      }
+                    >
+                      {buyOnDex ? "Buy DEX → Sell CEX" : "Buy CEX → Sell DEX"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">For $1000 USDT</span>
+                    <span className="font-mono">
+                      {tokensToTrade.toFixed(2)} tokens
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Est. Profit (gross)</span>
+                    <span className="font-mono text-emerald-400">
+                      ${profitUsdt.toFixed(2)}
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* Spread & Edge Section */}
       <div className="mb-4 p-4 bg-slate-900 rounded-lg">
         <div className="text-slate-400 font-medium mb-2">Spread & Edge</div>
@@ -525,6 +581,27 @@ function MarketCard({
                     ${decision.suggested_size_usdt}
                   </span>
                 </div>
+                <button
+                  className="w-full mt-3 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold transition-colors flex items-center justify-center gap-2"
+                  onClick={() => {
+                    const confirmed = window.confirm(
+                      `⚠️ EXECUTE TRADE?\n\n` +
+                        `Direction: ${decision.direction}\n` +
+                        `Size: $${decision.suggested_size_usdt} USDT\n` +
+                        `Expected Edge: ${decision.edge_after_costs_bps.toFixed(
+                          1
+                        )} bps\n\n` +
+                        `This will execute a REAL trade. Are you sure?`
+                    );
+                    if (confirmed) {
+                      alert(
+                        "🚧 Trade execution not yet implemented.\n\nThis requires wallet integration and smart contract interaction."
+                      );
+                    }
+                  }}
+                >
+                  <span>⚡</span> Execute Trade
+                </button>
               </>
             )}
             <div className="text-xs text-slate-500 mt-2">{decision.reason}</div>
