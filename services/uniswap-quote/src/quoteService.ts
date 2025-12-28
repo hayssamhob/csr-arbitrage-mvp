@@ -1,8 +1,7 @@
 import { ethers } from "ethers";
 import { Config, TokenConfig } from "./config";
-import { DefiLlamaService } from "./defiLlamaService";
-import { QuoterV2Service } from "./quoterV2Service";
 import { CachedQuote, UniswapQuoteResult } from "./schemas";
+import { SmartRouterService } from "./smartRouterService";
 import { V4SubgraphGatewayReader } from "./v4SubgraphGatewayReader";
 
 // ============================================================================
@@ -36,8 +35,7 @@ export class QuoteService {
   private readonly onLog: LogFn;
   private poolId: string;
   private v4Reader: V4SubgraphGatewayReader;
-  private quoterV2: QuoterV2Service;
-  private defiLlama: DefiLlamaService;
+  private smartRouter: SmartRouterService;
   private usdtToken: TokenConfig;
   private csrToken: TokenConfig;
   private csr25Token: TokenConfig;
@@ -50,18 +48,10 @@ export class QuoteService {
     // Initialize provider - REAL ON-CHAIN DATA ONLY
     this.provider = new ethers.providers.JsonRpcProvider(config.RPC_URL);
 
-    // Initialize DeFi Llama service (PRIMARY SOURCE - real market prices)
-    this.defiLlama = new DefiLlamaService(onLog);
+    // Initialize Smart Order Router (PRIMARY SOURCE - real Uniswap quotes)
+    this.smartRouter = new SmartRouterService(config.RPC_URL, onLog);
 
-    // Initialize QuoterV2 for on-chain quotes (FALLBACK 1)
-    this.quoterV2 = new QuoterV2Service(
-      config.RPC_URL,
-      config.CSR_CONFIG.address,
-      config.CSR25_CONFIG.address,
-      onLog
-    );
-
-    // Initialize V4 subgraph reader (FALLBACK 2)
+    // Initialize V4 subgraph reader (FALLBACK)
     const subgraphUrl = `https://gateway.thegraph.com/api/${config.GRAPH_API_KEY}/subgraphs/id/${config.UNISWAP_V4_SUBGRAPH_ID}`;
     this.v4Reader = new V4SubgraphGatewayReader(subgraphUrl);
 
@@ -171,112 +161,61 @@ export class QuoteService {
       this.tokenOut.symbol === "CSR" ? this.csrToken : this.csr25Token;
     const tokenType = targetToken.symbol === "CSR" ? "CSR" : "CSR25";
 
-    // PRIMARY: Try DeFi Llama for real market prices
+    // PRIMARY: Use Uniswap Smart Order Router for REAL swap quotes
     try {
-      const priceResult = await this.defiLlama.getTokenPrice(
-        tokenType as "CSR" | "CSR25"
-      );
-
-      if (!priceResult.error && priceResult.price > 0) {
-        this.onLog("info", "defillama_success", {
-          token: targetToken.symbol,
-          price: priceResult.price,
-          confidence: priceResult.confidence,
-        });
-
-        // Calculate output amount
-        let outputAmount: number;
-        if (direction === "buy") {
-          outputAmount = amountUsdt / priceResult.price;
-        } else {
-          outputAmount = amountUsdt * priceResult.price;
-        }
-
-        return {
-          type: "uniswap.quote",
-          pair: `${targetToken.symbol}/USDT`,
-          chain_id: this.chainId,
-          ts: now,
-          amount_in: amountUsdt.toString(),
-          amount_in_unit: direction === "buy" ? "USDT" : targetToken.symbol,
-          amount_out: outputAmount.toFixed(6),
-          amount_out_unit: direction === "buy" ? targetToken.symbol : "USDT",
-          effective_price_usdt: priceResult.price,
-          estimated_gas: 150000, // Standard gas estimate
-          pool_fee: 0.3, // Standard fee
-          is_stale: false,
-          validated: true,
-          source: "defillama",
-        };
-      }
-
-      this.onLog("warn", "defillama_failed_trying_quoter", {
-        token: targetToken.symbol,
-        error: priceResult.error,
-      });
-    } catch (apiError) {
-      this.onLog("warn", "defillama_exception", {
-        error: apiError instanceof Error ? apiError.message : String(apiError),
-      });
-    }
-
-    // FALLBACK 1: Try QuoterV2 for on-chain quotes
-    try {
-      const quoterResult =
+      const routerResult =
         direction === "buy"
-          ? await this.quoterV2.getQuoteBuy(
+          ? await this.smartRouter.getQuoteBuy(
               tokenType as "CSR" | "CSR25",
               amountUsdt
             )
-          : await this.quoterV2.getQuoteSell(
+          : await this.smartRouter.getQuoteSell(
               tokenType as "CSR" | "CSR25",
               amountUsdt
             );
 
-      if (!quoterResult.error && quoterResult.effectivePrice > 0) {
-        this.onLog("info", "quoter_v2_success", {
+      if (!routerResult.error && routerResult.executionPrice > 0) {
+        this.onLog("info", "smart_router_success", {
           token: targetToken.symbol,
-          price: quoterResult.effectivePrice,
-          fee: quoterResult.fee,
-          gasEstimate: quoterResult.gasEstimate,
+          price: routerResult.executionPrice,
+          priceImpact: routerResult.priceImpact,
+          gasEstimateUSD: routerResult.gasEstimateUSD,
+          route: routerResult.route,
         });
-
-        let outputAmount: number;
-        if (direction === "buy") {
-          outputAmount = amountUsdt / quoterResult.effectivePrice;
-        } else {
-          outputAmount = amountUsdt * quoterResult.effectivePrice;
-        }
 
         return {
           type: "uniswap.quote",
           pair: `${targetToken.symbol}/USDT`,
           chain_id: this.chainId,
           ts: now,
-          amount_in: amountUsdt.toString(),
+          amount_in: routerResult.amountIn,
           amount_in_unit: direction === "buy" ? "USDT" : targetToken.symbol,
-          amount_out: outputAmount.toFixed(6),
+          amount_out: routerResult.amountOut,
           amount_out_unit: direction === "buy" ? targetToken.symbol : "USDT",
-          effective_price_usdt: quoterResult.effectivePrice,
-          estimated_gas: quoterResult.gasEstimate,
-          pool_fee: quoterResult.fee,
-          price_impact: quoterResult.priceImpact,
+          effective_price_usdt: routerResult.executionPrice,
+          estimated_gas: routerResult.gasEstimateGwei,
+          pool_fee: 0.3, // Will be determined by route
+          price_impact: routerResult.priceImpact,
+          route: {
+            summary: routerResult.route,
+            pools: routerResult.protocols,
+          },
           is_stale: false,
           validated: true,
-          source: "quoter_v2",
+          source: "smart_router",
         };
       }
 
-      this.onLog("warn", "quoter_v2_failed_trying_subgraph", {
+      this.onLog("warn", "smart_router_failed_trying_subgraph", {
         token: targetToken.symbol,
-        error: quoterResult.error,
+        error: routerResult.error,
       });
-    } catch (quoterError) {
-      this.onLog("warn", "quoter_v2_exception", {
+    } catch (routerError) {
+      this.onLog("warn", "smart_router_exception", {
         error:
-          quoterError instanceof Error
-            ? quoterError.message
-            : String(quoterError),
+          routerError instanceof Error
+            ? routerError.message
+            : String(routerError),
       });
     }
 
