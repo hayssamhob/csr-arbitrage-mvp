@@ -29,11 +29,11 @@ export interface TokenConfig {
 export interface DexQuote {
   amountInUSDT: number;
   tokensOut: number;
-  executionPrice: number;    // USDT per token
-  gasEstimateUsdt: number;
+  executionPrice: number; // USDT per token
+  gasEstimateUsdt: number | null; // null if not scraped - NO PLACEHOLDERS
   slippagePercent: number;
   valid: boolean;
-  source: string;            // "ui_scrape" | "rpc" | "api"
+  source: string; // "ui_scrape" | "rpc" | "api"
 }
 
 export interface AlignmentResult {
@@ -46,7 +46,7 @@ export interface AlignmentResult {
   cexReferencePrice: number;
   deviationPercent: number;
   deviationBps: number;
-  gasCostUsdt: number;
+  gasCostUsdt: number | null; // null if not scraped - NO PLACEHOLDERS
   slippagePercent: number;
   confidence: ConfidenceLevel;
   bandLevel: "IDEAL" | "ACCEPTABLE" | "WARNING" | "ACTION_REQUIRED";
@@ -65,7 +65,7 @@ export const TOKEN_CONFIGS: Record<string, TokenConfig> = {
       warning: 1.0,
       action: 1.5,
     },
-    maxTradeSize: 100000,   // Tighter for low liquidity
+    maxTradeSize: 100000, // Tighter for low liquidity
     minTokenStep: 100,
     decimals: 18,
   },
@@ -79,7 +79,7 @@ export const TOKEN_CONFIGS: Record<string, TokenConfig> = {
       warning: 1.5,
       action: 2.0,
     },
-    maxTradeSize: 50000,    // Higher liquidity allows larger trades
+    maxTradeSize: 50000, // Higher liquidity allows larger trades
     minTokenStep: 10,
     decimals: 18,
   },
@@ -137,10 +137,10 @@ export function getBandStyle(band: ReturnType<typeof classifyDeviation>): {
 
 // Safety caps - configurable limits
 export const SAFETY_CAPS = {
-  MAX_ALIGN_USDT: 2000,        // Max USDT to suggest for alignment
-  MAX_ALIGN_TOKENS: 100000,    // Max tokens to suggest
-  MAX_STALENESS_SEC: 60,       // Data older than 60s is stale
-  HIGH_SLIPPAGE_PCT: 3,        // Warn if slippage > 3%
+  MAX_ALIGN_USDT: 2000, // Max USDT to suggest for alignment
+  MAX_ALIGN_TOKENS: 100000, // Max tokens to suggest
+  MAX_STALENESS_SEC: 60, // Data older than 60s is stale
+  HIGH_SLIPPAGE_PCT: 3, // Warn if slippage > 3%
 };
 
 /**
@@ -184,10 +184,10 @@ function findBestAlignmentQuote(
 
 /**
  * Core alignment computation - USES ONLY REAL QUOTES
- * 
+ *
  * This function does NOT invent prices. It only uses actual scraped quotes.
  * If we don't have a quote at the right size, we say so clearly.
- * 
+ *
  * @param cexPrice - CEX reference price (USDT per token)
  * @param currentDexPrice - Current DEX execution price (from smallest quote)
  * @param quotes - Available DEX quotes at different sizes (FROM SCRAPER)
@@ -315,7 +315,7 @@ export function computeDexAlignment(
   // Use the ACTUAL quote values - no estimation!
   const tokenAmount = bestQuote.tokensOut;
   const usdtAmount = bestQuote.amountInUSDT;
-  const gasCostUsdt = bestQuote.gasEstimateUsdt || 2.5;
+  const gasCostUsdt = bestQuote.gasEstimateUsdt ?? null;
   const slippagePercent = bestQuote.slippagePercent || 0.5;
 
   // Determine confidence based on data quality

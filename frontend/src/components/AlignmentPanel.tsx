@@ -136,12 +136,15 @@ export function AlignmentPanel({
   );
   const suggestedSizeTokens = dexPrice > 0 ? suggestedSizeUsdt / dexPrice : 0;
 
-  // Estimate costs
-  const gasUsdt = referenceQuote?.gasEstimateUsdt || 2; // Default $2 gas
+  // Estimate costs - only use real scraped gas
+  const gasUsdt = referenceQuote?.gasEstimateUsdt ?? null;
   const dexFeeBps = 30; // 0.3% Uniswap fee
   const slippageBps = Math.min(suggestedSizeUsdt / 100, 50);
-  const totalCostBps =
-    dexFeeBps + slippageBps + (gasUsdt / suggestedSizeUsdt) * 10000;
+  const gasBps =
+    gasUsdt !== null && suggestedSizeUsdt > 0
+      ? (gasUsdt / suggestedSizeUsdt) * 10000
+      : 0;
+  const totalCostBps = dexFeeBps + slippageBps + gasBps;
 
   // Estimate benefit
   const gapReductionBps = Math.abs(deviationBps) * 0.5; // Assume 50% reduction
