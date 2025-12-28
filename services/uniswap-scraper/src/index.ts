@@ -278,7 +278,7 @@ function buildScraperOutput(): ScraperOutput {
       scrapeMs: 0, // Would need to track this per cycle
       browser: "chromium",
       errorsLast5m: scraper?.getErrorsLast5m() || 0,
-      lastSuccessTs: scraper?.getLastSuccessTs(),
+      lastSuccessTs: scraper?.getLastSuccessTs() ?? null,
       consecutiveFailures:
         (scraper?.getConsecutiveFailures("CSR") || 0) +
         (scraper?.getConsecutiveFailures("CSR25") || 0),

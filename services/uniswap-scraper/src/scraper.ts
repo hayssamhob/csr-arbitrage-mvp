@@ -300,7 +300,7 @@ export class UniswapScraper {
       for (const xpath of xpathExpressions) {
         const elements = await page.$x(xpath);
         if (elements.length > 0) {
-          const input = elements[0];
+          const input = elements[0] as any;
           await input.click({ clickCount: 3 });
           await page.keyboard.press("Backspace");
           await input.type(amount.toString(), { delay: 50 });
@@ -450,8 +450,10 @@ export class UniswapScraper {
         }
 
         // Fallback: look for elements with gas-related classes or aria labels
-        const gasElements = document.querySelectorAll(
-          '[class*="gas"], [class*="fee"], [aria-label*="gas"]'
+        const gasElements = Array.from(
+          document.querySelectorAll(
+            '[class*="gas"], [class*="fee"], [aria-label*="gas"]'
+          )
         );
         for (const el of gasElements) {
           const text = el.textContent || "";
@@ -478,8 +480,8 @@ export class UniswapScraper {
     try {
       return await page.evaluate(() => {
         // Look for route/path display
-        const routeElements = document.querySelectorAll(
-          '[class*="route"], [class*="path"]'
+        const routeElements = Array.from(
+          document.querySelectorAll('[class*="route"], [class*="path"]')
         );
         for (const el of routeElements) {
           const text = el.textContent?.trim();
