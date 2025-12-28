@@ -948,21 +948,25 @@ function App() {
                 <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-green-300 bg-clip-text text-transparent">
                   Depollute Now!
                 </h1>
-                <p className="text-slate-400 mt-1">CSR Trading Platform</p>
+                <div className="text-slate-400 text-sm">
+                  CSR Trading Platform
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-4">
               <div className="text-right bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                <div className="text-sm text-slate-400">Last Update</div>
-                <div className="text-lg font-mono text-emerald-400">
-                  {timeAgo(lastUpdate.toISOString())}
+                <div className="text-right">
+                  <div className="text-xs text-slate-500 mb-1">Last Update</div>
+                  <div className="font-mono text-emerald-400 font-bold">
+                    {timeAgo(lastUpdate.toISOString())}
+                  </div>
+                  <div className="text-[10px] text-slate-600 mt-1">
+                    v1.1 Alignment
+                  </div>
                 </div>
                 {error && (
                   <div className="text-red-400 text-sm mt-1">{error}</div>
                 )}
-              </div>
-              {/* Wallet Connection */}
-              <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
                 {wallet.isConnected ? (
                   <div className="text-right">
                     <div className="text-xs text-slate-400">Wallet</div>
