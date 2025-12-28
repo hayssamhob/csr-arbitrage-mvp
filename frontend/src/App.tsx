@@ -833,11 +833,9 @@ function App() {
               />
               <div>
                 <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-green-300 bg-clip-text text-transparent">
-                  CSR Arbitrage Monitor
+                  Depollute Now!
                 </h1>
-                <p className="text-slate-400 mt-1">
-                  Real-time arbitrage opportunity detection
-                </p>
+                <p className="text-slate-400 mt-1">CSR Trading Platform</p>
               </div>
             </div>
             <div className="flex items-center gap-4">
@@ -1089,7 +1087,7 @@ function App() {
             />
             <span className="text-emerald-400/50">Depollute Now!</span>
           </div>
-          <p>CSR Arbitrage Monitor - Dry-Run Mode</p>
+          <p>Depollute Now! CSR Trading Platform</p>
           <p className="mt-1 text-slate-600">
             Data refreshes automatically via WebSocket
           </p>
