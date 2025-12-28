@@ -151,9 +151,9 @@ export function useWallet() {
     });
   }, []);
 
-  // Switch wallet - triggers wallet's account selector
+  // Switch wallet - triggers wallet's account selector popup
   const switchWallet = useCallback(async () => {
-    if (!isWalletAvailable) {
+    if (!isWalletAvailable || !window.ethereum) {
       setState((prev) => ({
         ...prev,
         error: "No wallet detected.",
@@ -161,22 +161,75 @@ export function useWallet() {
       return;
     }
 
+    setState((prev) => ({ ...prev, isConnecting: true, error: null }));
+
     try {
-      // Request wallet to show account selector
-      await window.ethereum!.request({
+      // First disconnect to clear state
+      setProvider(null);
+      setSigner(null);
+      setState({
+        address: null,
+        chainId: null,
+        balance: null,
+        isConnecting: true,
+        error: null,
+        walletName: null,
+      });
+
+      // Request wallet to show account selector using wallet_requestPermissions
+      // This forces the wallet to show the account selection popup
+      await window.ethereum.request({
         method: "wallet_requestPermissions",
         params: [{ eth_accounts: {} }],
       });
 
-      // After user selects account, reconnect
-      await connect();
-    } catch {
-      // User rejected or wallet doesn't support wallet_requestPermissions
-      // Fall back to disconnect + connect
-      disconnect();
-      setTimeout(() => connect(), 100);
+      // Now request accounts (this will use the newly selected account)
+      const accounts = (await window.ethereum.request({
+        method: "eth_requestAccounts",
+      })) as string[];
+
+      if (!accounts || accounts.length === 0) {
+        throw new Error("No accounts returned");
+      }
+
+      // Create new provider and signer
+      const web3Provider = new ethers.providers.Web3Provider(
+        window.ethereum as ethers.providers.ExternalProvider,
+        "any"
+      );
+      const web3Signer = web3Provider.getSigner();
+      const address = await web3Signer.getAddress();
+      const network = await web3Provider.getNetwork();
+      const balance = await web3Provider.getBalance(address);
+      const walletName = window.ethereum.isRabby
+        ? "Rabby"
+        : window.ethereum.isMetaMask
+        ? "MetaMask"
+        : "Wallet";
+
+      setProvider(web3Provider);
+      setSigner(web3Signer);
+
+      setState({
+        address,
+        chainId: network.chainId,
+        balance: ethers.utils.formatEther(balance),
+        isConnecting: false,
+        error: null,
+        walletName,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to switch wallet";
+      setState((prev) => ({
+        ...prev,
+        isConnecting: false,
+        error: message.includes("rejected")
+          ? "User rejected the request"
+          : message,
+      }));
     }
-  }, [isWalletAvailable, connect, disconnect]);
+  }, [isWalletAvailable]);
 
   // Listen for account changes
   useEffect(() => {
