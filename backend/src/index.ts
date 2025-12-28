@@ -1332,7 +1332,7 @@ app.get("/api/swaps/:token", async (req, res) => {
   try {
     // Get current block
     const currentBlock = await provider.getBlockNumber();
-    const fromBlock = currentBlock - 5000; // ~17 hours of blocks
+    const fromBlock = currentBlock - 1000; // ~3.3 hours of blocks (RPC limit is 1k blocks)
 
     // Query Swap events filtered by pool ID
     const filter = {
