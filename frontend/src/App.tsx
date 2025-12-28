@@ -50,6 +50,14 @@ interface UniswapQuote {
   validated?: boolean;
 }
 
+interface CostBreakdown {
+  cex_fee_bps: number;
+  dex_lp_fee_bps: number;
+  gas_cost_bps: number;
+  rebalance_bps: number;
+  slippage_bps: number;
+}
+
 interface StrategyDecision {
   type: string;
   ts: string;
@@ -64,6 +72,8 @@ interface StrategyDecision {
   direction: string;
   suggested_size_usdt: number;
   reason: string;
+  cost_breakdown?: CostBreakdown;
+  cex_source?: string;
 }
 
 interface LatokenTicker {
@@ -361,8 +371,30 @@ function MarketCard({
                 {decision.estimated_cost_bps} bps
               </span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Edge After Costs</span>
+            {decision.cost_breakdown && (
+              <div className="text-xs text-slate-500 pl-2 border-l border-slate-700 space-y-1">
+                <div className="flex justify-between">
+                  <span>CEX Fee</span>
+                  <span>{decision.cost_breakdown.cex_fee_bps} bps</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>DEX LP Fee</span>
+                  <span>{decision.cost_breakdown.dex_lp_fee_bps} bps</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Gas</span>
+                  <span>{decision.cost_breakdown.gas_cost_bps} bps</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Slippage Buffer</span>
+                  <span>{decision.cost_breakdown.slippage_bps} bps</span>
+                </div>
+              </div>
+            )}
+            <div className="flex justify-between pt-1 border-t border-slate-700">
+              <span className="text-slate-400 font-medium">
+                Edge After Costs
+              </span>
               <span
                 className={`font-mono font-bold ${
                   decision.edge_after_costs_bps > 0
