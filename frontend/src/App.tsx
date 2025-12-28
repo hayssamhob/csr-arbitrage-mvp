@@ -1,14 +1,25 @@
-import { useEffect, useState } from "react";
-import { AlignmentPanel } from "./components/AlignmentPanel";
-import { UniswapTradePanel } from "./components/UniswapTradePanel";
-import { useWallet } from "./hooks/useWallet";
+/**
+ * DEX Price Defense & Arbitrage Platform
+ * 
+ * Primary Purpose: Keep Uniswap DEX prices aligned with CEX reference prices
+ * Secondary: Capture arbitrage when safe
+ * 
+ * v2.0 - Complete UI Redesign per Product Spec
+ */
 
-// In production (behind nginx), use relative URLs. In dev, use localhost.
+import { useEffect, useState, useMemo } from "react";
+import { UniswapTradePanel } from "./components/UniswapTradePanel";
+import { PriceAlignmentCard } from "./components/PriceAlignmentCard";
+import { MarketContextCard } from "./components/MarketContextCard";
+import { AdvancedMetricsCard } from "./components/AdvancedMetricsCard";
+import { GlobalStatusBar } from "./components/GlobalStatusBar";
+import { useWallet } from "./hooks/useWallet";
+import type { DexQuote } from "./lib/alignmentEngine";
+
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.PROD ? "" : "http://localhost:8001");
 
-// WebSocket URL needs full origin in production
 function getWsUrl(): string {
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL.replace("http", "ws") + "/ws";
@@ -48,49 +59,8 @@ interface UniswapQuote {
   chain_id: number;
   ts: string;
   amount_in: string;
-  amount_in_unit?: string;
-  amount_out?: string;
-  amount_out_unit?: string;
   effective_price_usdt: number;
-  estimated_gas?: number;
-  pool_fee?: number;
-  price_impact?: number;
-  price_impact_percent?: string;
-  gas_cost_usdt?: number;
-  gas_cost_eth?: string;
-  max_slippage?: string;
-  order_routing?: string;
-  fee_display?: string;
   is_stale: boolean;
-  error?: string;
-  source?: string;
-  validated?: boolean;
-}
-
-interface CostBreakdown {
-  cex_fee_bps: number;
-  dex_lp_fee_bps: number;
-  gas_cost_bps: number;
-  rebalance_bps: number;
-  slippage_bps: number;
-}
-
-interface StrategyDecision {
-  type: string;
-  ts: string;
-  symbol: string;
-  lbank_bid: number;
-  lbank_ask: number;
-  uniswap_price: number;
-  raw_spread_bps: number;
-  estimated_cost_bps: number;
-  edge_after_costs_bps: number;
-  would_trade: boolean;
-  direction: string;
-  suggested_size_usdt: number;
-  reason: string;
-  cost_breakdown?: CostBreakdown;
-  cex_source?: string;
 }
 
 interface LatokenTicker {
@@ -107,7 +77,6 @@ interface MarketData {
   lbank_ticker?: LBankTicker;
   latoken_ticker?: LatokenTicker;
   uniswap_quote?: UniswapQuote;
-  decision?: StrategyDecision;
 }
 
 interface MarketState {
@@ -130,34 +99,7 @@ interface SystemStatus {
 interface DashboardData {
   ts: string;
   market_state?: MarketState;
-  decision?: { csr_usdt?: StrategyDecision; csr25_usdt?: StrategyDecision };
   system_status: SystemStatus;
-  opportunities: StrategyDecision[];
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    healthy: "bg-green-500",
-    ok: "bg-green-500",
-    degraded: "bg-yellow-500",
-    error: "bg-red-500",
-    unknown: "bg-gray-500",
-  };
-  return (
-    <span
-      className={`px-2 py-1 rounded text-xs font-bold text-white ${
-        colors[status] || colors.unknown
-      }`}
-    >
-      {status.toUpperCase()}
-    </span>
-  );
-}
-
-function formatPrice(price: number): string {
-  if (price < 0.01) return price.toFixed(6);
-  if (price < 1) return price.toFixed(4);
-  return price.toFixed(2);
 }
 
 function timeAgo(ts: string): string {
@@ -177,558 +119,11 @@ interface PricePoint {
   spread_bps: number;
 }
 
-function MiniChart({
-  data,
-  height = 60,
-}: {
-  data: PricePoint[];
-  height?: number;
-}) {
-  if (data.length < 2) {
-    return (
-      <div className="text-slate-500 text-xs text-center py-2">
-        Collecting data...
-      </div>
-    );
-  }
-
-  const spreads = data.map((p) => p.spread_bps);
-  const min = Math.min(...spreads);
-  const max = Math.max(...spreads);
-  const range = max - min || 1;
-
-  const width = 200;
-  const padding = 4;
-  const chartWidth = width - padding * 2;
-  const chartHeight = height - padding * 2;
-
-  const points = data
-    .map((p, i) => {
-      const x = padding + (i / (data.length - 1)) * chartWidth;
-      const y =
-        padding + chartHeight - ((p.spread_bps - min) / range) * chartHeight;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  const lastSpread = spreads[spreads.length - 1];
-  const color = lastSpread > 0 ? "#10b981" : "#ef4444";
-
-  return (
-    <div className="relative">
-      <svg width={width} height={height} className="w-full">
-        <polyline
-          points={points}
-          fill="none"
-          stroke={color}
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <line
-          x1={padding}
-          y1={height / 2}
-          x2={width - padding}
-          y2={height / 2}
-          stroke="#374151"
-          strokeWidth="1"
-          strokeDasharray="2,2"
-        />
-      </svg>
-      <div className="absolute top-0 right-0 text-xs">
-        <span className={lastSpread > 0 ? "text-emerald-400" : "text-red-400"}>
-          {lastSpread > 0 ? "+" : ""}
-          {lastSpread.toFixed(0)} bps
-        </span>
-      </div>
-    </div>
-  );
-}
-
-interface CostBreakdown {
-  cex_fee_bps: number;
-  dex_lp_fee_bps: number;
-  gas_cost_bps: number;
-  rebalance_bps: number;
-  slippage_bps: number;
-}
-
-interface ExtendedDecision extends StrategyDecision {
-  cost_breakdown?: CostBreakdown;
-  cex_source?: string;
-}
-
-function MarketCard({
-  title,
-  market,
-  lbankHealth,
-  priceHistory,
-  wallet,
-  onExecuteTrade,
-}: {
-  title: string;
-  market: MarketData;
-  lbankHealth?: ServiceHealth;
-  priceHistory?: PricePoint[];
-  wallet?: { isConnected: boolean; signer: unknown };
-  onExecuteTrade?: (direction: string, size: number, token: string) => void;
-}) {
-  const lbank = market.lbank_ticker;
-  const latoken = market.latoken_ticker;
-  const uniswap = market.uniswap_quote;
-  const decision = market.decision as ExtendedDecision | undefined;
-
-  // Determine CEX source based on market
-  const isCSR =
-    title.toLowerCase().includes("csr") &&
-    !title.toLowerCase().includes("csr25");
-  const cexSource = isCSR ? "LATOKEN" : "LBANK";
-
-  const lbankSymbolKey = title.toLowerCase().includes("csr25")
-    ? "csr25_usdt"
-    : "csr_usdt";
-  const lbankSubscriptionError =
-    lbankHealth?.subscription_errors?.[lbankSymbolKey];
-
-  return (
-    <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl p-6 border border-slate-700 hover:border-emerald-500/30 transition-all shadow-xl">
-      <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-        {title}
-      </h3>
-
-      {/* CEX Section */}
-      <div className="mb-4 p-4 bg-slate-900 rounded-lg">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-slate-400 font-medium">{cexSource} (CEX)</span>
-          {latoken && isCSR && (
-            <span className="text-xs text-slate-500">
-              {timeAgo(latoken.ts)}
-            </span>
-          )}
-          {lbank && !isCSR && (
-            <span className="text-xs text-slate-500">{timeAgo(lbank.ts)}</span>
-          )}
-        </div>
-
-        {/* CSR on LATOKEN - show data from latoken_ticker */}
-        {isCSR ? (
-          latoken ? (
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Bid</span>
-                <span className="font-mono text-green-400">
-                  ${formatPrice(latoken.bid)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Ask</span>
-                <span className="font-mono text-red-400">
-                  ${formatPrice(latoken.ask)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Last</span>
-                <span className="font-mono text-white">
-                  ${formatPrice(latoken.last)}
-                </span>
-              </div>
-              {latoken.volume_24h !== undefined && (
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Volume 24h</span>
-                  <span className="font-mono text-sm">
-                    {latoken.volume_24h.toLocaleString()}
-                  </span>
-                </div>
-              )}
-              <div className="text-xs text-green-400 mt-2">
-                LATOKEN: Live data
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="text-yellow-400 text-sm">
-                LATOKEN: No data available
-              </div>
-              <div className="text-xs text-slate-500">
-                {decision
-                  ? "Waiting for arbitrage calculation..."
-                  : "Connection issues - may be geo-restricted"}
-              </div>
-              <div className="text-xs text-blue-400 mt-2">
-                Try deploying on a server outside Indonesia
-              </div>
-            </div>
-          )
-        ) : lbank ? (
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <span className="text-slate-400">Bid</span>
-              <span className="font-mono text-green-400">
-                ${formatPrice(lbank.bid)}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Ask</span>
-              <span className="font-mono text-red-400">
-                ${formatPrice(lbank.ask)}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Last</span>
-              <span className="font-mono">${formatPrice(lbank.last)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Volume 24h</span>
-              <span className="font-mono text-sm">
-                {lbank.volume_24h?.toLocaleString() || "N/A"}
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <div className="text-yellow-400 text-sm">
-              {lbankSubscriptionError
-                ? "LBank subscription rejected"
-                : "No LBank data"}
-            </div>
-            {lbankSubscriptionError ? (
-              <div className="text-xs text-slate-500">
-                {lbankSubscriptionError}
-              </div>
-            ) : (
-              <div className="text-xs text-slate-500">
-                Waiting for ticker stream
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Uniswap (DEX) Section - Uniswap-style display */}
-      <div className="mb-4 p-4 bg-slate-900 rounded-lg">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-slate-400 font-medium">Uniswap (DEX)</span>
-          {uniswap && (
-            <span className="text-xs text-slate-500">
-              {timeAgo(uniswap.ts)}
-            </span>
-          )}
-        </div>
-        {uniswap ? (
-          <div className="space-y-2">
-            {/* Price per token - Uniswap style */}
-            <div className="flex justify-between items-center">
-              <span className="text-slate-400">Price</span>
-              <span className="font-mono text-blue-400 font-bold">
-                ${formatPrice(uniswap.effective_price_usdt)}
-              </span>
-            </div>
-            <div className="text-xs text-slate-500 text-right">
-              1 {uniswap.amount_out_unit} ={" "}
-              {formatPrice(uniswap.effective_price_usdt)} USDT
-            </div>
-
-            {/* Uniswap-style info rows */}
-            <div className="mt-3 pt-3 border-t border-slate-700/50 space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Fee</span>
-                <span className="text-emerald-400">
-                  {uniswap.fee_display || "Free"}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Network cost</span>
-                <span className="text-slate-300">
-                  ${(uniswap.gas_cost_usdt || 0.02).toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Order routing</span>
-                <span className="text-slate-300">
-                  {uniswap.order_routing || "Uniswap API"}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Price impact</span>
-                <span
-                  className={`${
-                    (uniswap.price_impact || 0) < -1
-                      ? "text-yellow-400"
-                      : "text-slate-300"
-                  }`}
-                >
-                  {uniswap.price_impact_percent ||
-                    `${(uniswap.price_impact || -0.05).toFixed(2)}%`}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Max slippage</span>
-                <span className="text-slate-300">
-                  {uniswap.max_slippage || "Auto / 0.50%"}
-                </span>
-              </div>
-            </div>
-
-            {uniswap.error ? (
-              <div className="text-yellow-400 text-sm mt-2">
-                {uniswap.error === "Pool not found"
-                  ? "Pool not found"
-                  : uniswap.error.toLowerCase()}
-              </div>
-            ) : uniswap.validated ? (
-              <div className="text-emerald-400 text-xs mt-2 flex items-center gap-1">
-                <span>✓</span> Real-time quote
-              </div>
-            ) : (
-              <div className="text-yellow-400 text-sm mt-2">
-                Awaiting validation
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="text-yellow-400 text-sm">No Uniswap data</div>
-        )}
-      </div>
-
-      {/* Arbitrage Calculator */}
-      {uniswap && (isCSR ? latoken : lbank) && (
-        <div className="mb-4 p-4 bg-slate-900 rounded-lg">
-          <div className="text-slate-400 font-medium mb-2">
-            Arbitrage Calculator
-          </div>
-          <div className="space-y-2 text-sm">
-            {(() => {
-              // Fixed: proper parentheses for CEX mid-price
-              const cexBid = isCSR ? latoken?.bid || 0 : lbank?.bid || 0;
-              const cexAsk = isCSR ? latoken?.ask || 0 : lbank?.ask || 0;
-              const cexMidPrice = (cexBid + cexAsk) / 2;
-              const dexPrice = uniswap.effective_price_usdt;
-              const priceDiffPct = ((cexMidPrice - dexPrice) / dexPrice) * 100;
-              const buyOnDex = cexMidPrice > dexPrice;
-
-              if (Math.abs(priceDiffPct) < 0.1) {
-                return (
-                  <div className="text-slate-500">
-                    Prices balanced (within 0.1%)
-                  </div>
-                );
-              }
-
-              const targetSize = 1000;
-              const tokensFor1000 = targetSize / dexPrice;
-              const grossProfit =
-                Math.abs(cexMidPrice - dexPrice) * tokensFor1000;
-
-              return (
-                <>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">CEX Mid</span>
-                    <span className="font-mono">
-                      ${formatPrice(cexMidPrice)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">DEX Mid</span>
-                    <span className="font-mono">${formatPrice(dexPrice)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Gap</span>
-                    <span
-                      className={`font-mono ${
-                        priceDiffPct > 0 ? "text-emerald-400" : "text-red-400"
-                      }`}
-                    >
-                      {priceDiffPct > 0 ? "+" : ""}
-                      {priceDiffPct.toFixed(2)}%
-                    </span>
-                  </div>
-                  <div className="border-t border-slate-700 pt-2 mt-2">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Strategy</span>
-                      <span
-                        className={
-                          buyOnDex ? "text-emerald-400" : "text-blue-400"
-                        }
-                      >
-                        {buyOnDex ? "Buy DEX → Sell CEX" : "Buy CEX → Sell DEX"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">$1000 gets</span>
-                      <span className="font-mono">
-                        {tokensFor1000.toFixed(2)} tokens
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Gross Profit</span>
-                      <span className="font-mono text-emerald-400">
-                        ${grossProfit.toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-
-      {/* Spread & Edge Section */}
-      <div className="mb-4 p-4 bg-slate-900 rounded-lg">
-        <div className="text-slate-400 font-medium mb-2">Spread & Edge</div>
-        {decision ? (
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <span className="text-slate-400">Raw Spread</span>
-              <span
-                className={`font-mono ${
-                  decision.raw_spread_bps > 0
-                    ? "text-green-400"
-                    : "text-red-400"
-                }`}
-              >
-                {decision.raw_spread_bps.toFixed(1)} bps
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Est. Costs</span>
-              <span className="font-mono text-orange-400">
-                {decision.estimated_cost_bps} bps
-              </span>
-            </div>
-            {decision.cost_breakdown && (
-              <div className="text-xs text-slate-500 pl-2 border-l border-slate-700 space-y-1">
-                <div className="flex justify-between">
-                  <span>CEX Fee</span>
-                  <span>{decision.cost_breakdown.cex_fee_bps} bps</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>DEX LP Fee</span>
-                  <span>{decision.cost_breakdown.dex_lp_fee_bps} bps</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Gas</span>
-                  <span>{decision.cost_breakdown.gas_cost_bps} bps</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Slippage Buffer</span>
-                  <span>{decision.cost_breakdown.slippage_bps} bps</span>
-                </div>
-              </div>
-            )}
-            <div className="flex justify-between pt-1 border-t border-slate-700">
-              <span className="text-slate-400 font-medium">
-                Edge After Costs
-              </span>
-              <span
-                className={`font-mono font-bold ${
-                  decision.edge_after_costs_bps > 0
-                    ? "text-green-400"
-                    : "text-red-400"
-                }`}
-              >
-                {decision.edge_after_costs_bps.toFixed(1)} bps
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div className="text-slate-500 text-sm">Awaiting data</div>
-        )}
-      </div>
-
-      {/* Spread History Chart */}
-      {priceHistory && priceHistory.length > 0 && (
-        <div className="mb-4 p-4 bg-slate-900 rounded-lg">
-          <div className="text-slate-400 font-medium mb-2">Spread History</div>
-          <MiniChart data={priceHistory} height={50} />
-        </div>
-      )}
-
-      {/* Decision Section */}
-      <div className="p-4 bg-slate-900 rounded-lg">
-        <div className="text-slate-400 font-medium mb-2">Decision</div>
-        {decision ? (
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <span className="text-slate-400">Would Trade</span>
-              <span
-                className={`font-bold ${
-                  decision.would_trade ? "text-green-400" : "text-slate-400"
-                }`}
-              >
-                {decision.would_trade ? "YES" : "NO"}
-              </span>
-            </div>
-            {decision.would_trade && (
-              <>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Direction</span>
-                  <span className="font-mono text-sm">
-                    {decision.direction}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Suggested Size</span>
-                  <span className="font-mono">
-                    ${decision.suggested_size_usdt}
-                  </span>
-                </div>
-                <button
-                  className={`w-full mt-3 px-4 py-2 ${
-                    wallet?.isConnected
-                      ? "bg-emerald-600 hover:bg-emerald-500"
-                      : "bg-slate-600 cursor-not-allowed"
-                  } text-white rounded-lg font-bold transition-colors flex items-center justify-center gap-2`}
-                  disabled={!wallet?.isConnected}
-                  onClick={() => {
-                    if (!wallet?.isConnected) {
-                      alert("Please connect your wallet first");
-                      return;
-                    }
-                    const token = isCSR ? "CSR" : "CSR25";
-                    const confirmed = window.confirm(
-                      `⚠️ EXECUTE TRADE?\n\n` +
-                        `Direction: ${decision.direction}\n` +
-                        `Token: ${token}\n` +
-                        `Size: $${decision.suggested_size_usdt} USDT\n` +
-                        `Expected Edge: ${decision.edge_after_costs_bps.toFixed(
-                          1
-                        )} bps\n\n` +
-                        `This will execute a REAL trade on Uniswap. Are you sure?`
-                    );
-                    if (confirmed && onExecuteTrade) {
-                      onExecuteTrade(
-                        decision.direction,
-                        decision.suggested_size_usdt,
-                        token
-                      );
-                    }
-                  }}
-                >
-                  <span>⚡</span>{" "}
-                  {wallet?.isConnected
-                    ? "Execute Trade"
-                    : "Connect Wallet First"}
-                </button>
-              </>
-            )}
-            <div className="text-xs text-slate-500 mt-2">{decision.reason}</div>
-          </div>
-        ) : (
-          <div className="text-slate-500 text-sm">No decision yet</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 interface PriceHistoryState {
   csr_usdt: PricePoint[];
   csr25_usdt: PricePoint[];
 }
 
-// Scraper quote type
 interface ScraperQuote {
   market: string;
   amountInUSDT: number;
@@ -757,33 +152,78 @@ function App() {
     csr_usdt: [],
     csr25_usdt: [],
   });
-
-  // Scraper quotes state
   const [scraperData, setScraperData] = useState<ScraperData | null>(null);
-
-  // Wallet integration
   const wallet = useWallet();
-
-  // Trade panel state
   const [showTradePanel, setShowTradePanel] = useState<{
     token: "CSR" | "CSR25";
     direction: "buy" | "sell";
   } | null>(null);
+  const [executionMode, setExecutionMode] = useState<"OFF" | "MANUAL" | "AUTO">("OFF");
+  const [killSwitchActive, setKillSwitchActive] = useState(false);
 
-  // Handle trade button click - opens the trade panel
-  const handleExecuteTrade = (
-    direction: string,
-    _size: number,
-    token: string
-  ) => {
-    const isBuyDex = direction === "buy_dex_sell_cex";
+  // Convert scraper quotes to DexQuote format
+  const csrDexQuotes: DexQuote[] = useMemo(() => {
+    if (!scraperData?.quotes) return [];
+    return scraperData.quotes
+      .filter(q => q.market === "CSR_USDT" && q.valid)
+      .map(q => ({
+        amountInUSDT: q.amountInUSDT,
+        tokensOut: q.amountOutToken,
+        executionPrice: q.price_usdt_per_token,
+        gasEstimateUsdt: q.gasEstimateUsdt || 2.5,
+        slippagePercent: 0.5,
+        valid: q.valid,
+        source: "ui_scrape",
+      }));
+  }, [scraperData]);
+
+  const csr25DexQuotes: DexQuote[] = useMemo(() => {
+    if (!scraperData?.quotes) return [];
+    return scraperData.quotes
+      .filter(q => q.market === "CSR25_USDT" && q.valid)
+      .map(q => ({
+        amountInUSDT: q.amountInUSDT,
+        tokensOut: q.amountOutToken,
+        executionPrice: q.price_usdt_per_token,
+        gasEstimateUsdt: q.gasEstimateUsdt || 2.5,
+        slippagePercent: 0.5,
+        valid: q.valid,
+        source: "ui_scrape",
+      }));
+  }, [scraperData]);
+
+  const services = useMemo(() => [
+    {
+      name: "LBank",
+      status: (data?.system_status?.lbank_gateway?.status === "ok" ? "ok" : "error") as "ok" | "warning" | "error" | "offline",
+      lastUpdate: data?.system_status?.lbank_gateway?.ts || "—",
+    },
+    {
+      name: "LATOKEN",
+      status: (data?.system_status?.latoken_gateway?.status === "ok" ? "ok" : "error") as "ok" | "warning" | "error" | "offline",
+      lastUpdate: data?.system_status?.latoken_gateway?.ts || "—",
+    },
+    {
+      name: "Uniswap",
+      status: (scraperData?.meta?.errorsLast5m === 0 ? "ok" : "warning") as "ok" | "warning" | "error" | "offline",
+      lastUpdate: scraperData?.meta?.lastSuccessTs ? new Date(scraperData.meta.lastSuccessTs).toISOString() : "—",
+    },
+    {
+      name: "Strategy",
+      status: (data?.system_status?.strategy_engine?.status === "ok" ? "ok" : "warning") as "ok" | "warning" | "error" | "offline",
+      lastUpdate: data?.system_status?.strategy_engine?.ts || "—",
+    },
+  ], [data, scraperData]);
+
+  const handleAlignmentExecute = (direction: string, _tokenAmount: number) => {
+    const isBuy = direction === "BUY_ON_DEX";
     setShowTradePanel({
-      token: token as "CSR" | "CSR25",
-      direction: isBuyDex ? "buy" : "sell",
+      token: "CSR25",
+      direction: isBuy ? "buy" : "sell",
     });
   };
 
-  // Fetch price history periodically
+  // Fetch price history
   useEffect(() => {
     async function fetchHistory() {
       try {
@@ -808,7 +248,7 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch scraper quotes periodically
+  // Fetch scraper quotes
   useEffect(() => {
     async function fetchScraperQuotes() {
       try {
@@ -826,7 +266,7 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch data immediately on mount for instant loading
+  // Fetch initial data
   useEffect(() => {
     async function fetchInitialData() {
       try {
@@ -843,16 +283,12 @@ function App() {
     fetchInitialData();
   }, []);
 
+  // WebSocket connection
   useEffect(() => {
     let ws: WebSocket | null = null;
-
     function connect() {
       ws = new WebSocket(getWsUrl());
-
-      ws.onopen = () => {
-        setError(null);
-      };
-
+      ws.onopen = () => setError(null);
       ws.onmessage = (event) => {
         try {
           const parsed = JSON.parse(event.data);
@@ -862,24 +298,17 @@ function App() {
           console.error("Failed to parse WS message");
         }
       };
-
-      ws.onerror = () => {
-        setError("WebSocket error");
-      };
-
+      ws.onerror = () => setError("WebSocket error");
       ws.onclose = () => {
         setError("Connection lost");
         setTimeout(connect, 3000);
       };
     }
-
     connect();
-
-    return () => {
-      ws?.close();
-    };
+    return () => { ws?.close(); };
   }, []);
 
+  // Polling fallback
   useEffect(() => {
     if (error) {
       const interval = setInterval(async () => {
@@ -900,7 +329,17 @@ function App() {
   }, [error]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-900 text-white px-4 sm:px-6 lg:px-8 py-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-900 text-white">
+      {/* Global Status Bar */}
+      <GlobalStatusBar
+        services={services}
+        executionMode={executionMode}
+        onModeChange={setExecutionMode}
+        killSwitchActive={killSwitchActive}
+        onKillSwitchToggle={() => setKillSwitchActive(!killSwitchActive)}
+        lastDataUpdate={lastUpdate}
+      />
+
       {/* Trade Panel Modal */}
       {showTradePanel && data && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
@@ -916,10 +355,8 @@ function App() {
               direction={showTradePanel.direction}
               dexPrice={
                 showTradePanel.token === "CSR"
-                  ? data.market_state?.csr_usdt?.uniswap_quote
-                      ?.effective_price_usdt || 0
-                  : data.market_state?.csr25_usdt?.uniswap_quote
-                      ?.effective_price_usdt || 0
+                  ? data.market_state?.csr_usdt?.uniswap_quote?.effective_price_usdt || 0
+                  : data.market_state?.csr25_usdt?.uniswap_quote?.effective_price_usdt || 0
               }
               cexPrice={
                 showTradePanel.token === "CSR"
@@ -934,461 +371,166 @@ function App() {
         </div>
       )}
 
-      <div className="max-w-6xl mx-auto w-full">
+      <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
-        <header className="mb-8">
+        <header className="mb-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <img
                 src="/depollute-logo-256.png"
                 alt="Depollute Now!"
-                className="h-16 w-16 rounded-lg shadow-lg shadow-emerald-500/20"
+                className="h-14 w-14 rounded-lg shadow-lg shadow-emerald-500/20"
               />
               <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-green-300 bg-clip-text text-transparent">
-                  Depollute Now!
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-green-300 bg-clip-text text-transparent">
+                  DEX Price Defense
                 </h1>
-                <div className="text-slate-400 text-sm">
-                  CSR Trading Platform
+                <div className="text-slate-500 text-xs">
+                  Depollute Now! • v2.0
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right bg-slate-800/50 rounded-lg p-3 border border-slate-700">
-                <div className="text-right">
-                  <div className="text-xs text-slate-500 mb-1">Last Update</div>
-                  <div className="font-mono text-emerald-400 font-bold">
-                    {timeAgo(lastUpdate.toISOString())}
-                  </div>
-                  <div className="text-[10px] text-slate-600 mt-1">
-                    v1.1 Alignment
-                  </div>
+            <div className="flex items-center gap-3">
+              {error && (
+                <div className="text-red-400 text-xs px-2 py-1 bg-red-500/10 rounded">
+                  {error}
                 </div>
-                {error && (
-                  <div className="text-red-400 text-sm mt-1">{error}</div>
-                )}
-                {wallet.isConnected ? (
-                  <div className="text-right">
-                    <div className="text-xs text-slate-400">Wallet</div>
-                    <div className="font-mono text-sm text-emerald-400">
-                      {wallet.address?.slice(0, 6)}...
-                      {wallet.address?.slice(-4)}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {wallet.chainId === 1
-                        ? "Ethereum"
-                        : `Chain ${wallet.chainId}`}
-                    </div>
-                    <div className="flex gap-2 mt-1 justify-end">
-                      <button
-                        onClick={() => wallet.switchWallet()}
-                        className="text-xs text-blue-400 hover:text-blue-300"
-                      >
-                        Switch
-                      </button>
-                      <button
-                        onClick={wallet.disconnect}
-                        className="text-xs text-red-400 hover:text-red-300"
-                      >
-                        Disconnect
-                      </button>
-                    </div>
-                  </div>
-                ) : (
+              )}
+              {wallet.isConnected ? (
+                <div className="flex items-center gap-2 bg-slate-800/50 rounded-lg px-3 py-2 border border-slate-700">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                  <span className="font-mono text-sm text-emerald-400">
+                    {wallet.address?.slice(0, 6)}...{wallet.address?.slice(-4)}
+                  </span>
                   <button
-                    onClick={wallet.connect}
-                    disabled={wallet.isConnecting}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 text-white rounded-lg font-medium text-sm transition-colors"
+                    onClick={wallet.disconnect}
+                    className="text-xs text-slate-400 hover:text-red-400 ml-2"
                   >
-                    {wallet.isConnecting
-                      ? "Connecting..."
-                      : "🦊 Connect Wallet"}
+                    ✕
                   </button>
-                )}
-                {wallet.error && (
-                  <div className="text-red-400 text-xs mt-1">
-                    {wallet.error}
-                  </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <button
+                  onClick={wallet.connect}
+                  disabled={wallet.isConnecting}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 text-white rounded-lg font-medium text-sm transition-colors"
+                >
+                  {wallet.isConnecting ? "Connecting..." : "🦊 Connect Wallet"}
+                </button>
+              )}
             </div>
           </div>
         </header>
 
-        {/* System Status Bar */}
+        {/* PRIMARY: DEX Price Alignment Cards */}
         <section className="mb-8">
-          <h2 className="text-xl font-semibold mb-4 text-emerald-400">
-            System Status
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-            <div className="bg-slate-800/70 rounded-lg p-3 border border-slate-700 hover:border-emerald-500/50 transition-colors">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 text-sm">Overall</span>
-                <StatusBadge
-                  status={data?.system_status.overall_status || "unknown"}
-                />
-              </div>
-            </div>
-            <a
-              href="https://www.lbank.com/trade/csr25_usdt"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-slate-800/70 rounded-lg p-3 border border-slate-700 hover:border-emerald-500/50 transition-colors cursor-pointer"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 text-sm">LBank ↗</span>
-                <StatusBadge
-                  status={
-                    data?.system_status.lbank_gateway?.status || "unknown"
-                  }
-                />
-              </div>
-            </a>
-            <a
-              href="https://latoken.com/exchange/CSR_USDT"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-slate-800/70 rounded-lg p-3 border border-slate-700 hover:border-emerald-500/50 transition-colors cursor-pointer"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 text-sm">LATOKEN ↗</span>
-                <StatusBadge
-                  status={
-                    data?.system_status.latoken_gateway?.status || "unknown"
-                  }
-                />
-              </div>
-            </a>
-            <a
-              href="https://app.uniswap.org/swap?chain=mainnet&inputCurrency=0xdAC17F958D2ee523a2206206994597C13D831ec7&outputCurrency=0x75Ecb52e403C617679FBd3e77A50f9d10A842387"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-slate-800/70 rounded-lg p-3 border border-slate-700 hover:border-emerald-500/50 transition-colors cursor-pointer"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 text-sm">Uniswap CSR ↗</span>
-                <StatusBadge
-                  status={
-                    data?.system_status.uniswap_quote_csr?.status || "unknown"
-                  }
-                />
-              </div>
-            </a>
-            <a
-              href="https://app.uniswap.org/swap?chain=mainnet&inputCurrency=0xdAC17F958D2ee523a2206206994597C13D831ec7&outputCurrency=0x502E7230E142A332DFEd1095F7174834b2548982"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-slate-800/70 rounded-lg p-3 border border-slate-700 hover:border-emerald-500/50 transition-colors cursor-pointer"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 text-sm">Uniswap CSR25 ↗</span>
-                <StatusBadge
-                  status={
-                    data?.system_status.uniswap_quote_csr25?.status || "unknown"
-                  }
-                />
-              </div>
-            </a>
-            <div className="bg-slate-800/70 rounded-lg p-3 border border-slate-700 hover:border-emerald-500/50 transition-colors">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 text-sm">Strategy</span>
-                <StatusBadge
-                  status={
-                    data?.system_status.strategy_engine?.status || "unknown"
-                  }
-                />
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Execution Mode Banner */}
-        <section className="mb-8">
-          <div className="bg-gradient-to-r from-slate-800/80 to-emerald-900/30 border border-emerald-500/30 rounded-lg p-4 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <span className="text-slate-400">Execution Mode:</span>
-              <span className="px-3 py-1 bg-blue-600/80 text-white rounded-full font-bold text-sm">
-                OFF
-              </span>
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="text-slate-400">Kill Switch:</span>
-              <span className="px-3 py-1 bg-emerald-600/80 text-white rounded-full font-bold text-sm animate-pulse">
-                ACTIVE
-              </span>
-            </div>
-            <div className="text-sm text-emerald-400/70 font-medium">
-              🛡️ DRY RUN MODE - No trades executed
-            </div>
-          </div>
-        </section>
-
-        {/* Opportunities */}
-        {data?.opportunities && data.opportunities.length > 0 && (
-          <section className="mb-8">
-            <h2 className="text-xl font-semibold mb-4 text-emerald-400 flex items-center gap-2">
-              <span className="animate-pulse">🎯</span> Active Opportunities
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <span className="text-2xl">⚡</span> DEX Price Alignment
             </h2>
-            <div className="space-y-3">
-              {data.opportunities.map((opp, i) => (
-                <div
-                  key={i}
-                  onClick={() => {
-                    const token = opp.symbol.includes("csr25")
-                      ? "CSR25"
-                      : "CSR";
-                    const direction =
-                      opp.direction === "buy_dex_sell_cex" ? "buy" : "sell";
-                    setShowTradePanel({
-                      token: token as "CSR" | "CSR25",
-                      direction: direction as "buy" | "sell",
-                    });
-                  }}
-                  className="bg-gradient-to-r from-emerald-900/40 to-green-900/20 border border-emerald-500/50 rounded-lg p-4 shadow-lg shadow-emerald-500/10 cursor-pointer hover:border-emerald-400 hover:shadow-emerald-500/30 transition-all"
-                >
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-3">
-                      <span className="font-bold text-emerald-400 text-lg">
-                        {opp.symbol.toUpperCase()}
-                      </span>
-                      <span className="px-2 py-1 bg-slate-700/50 rounded text-slate-300 text-sm">
-                        {opp.direction === "buy_dex_sell_cex"
-                          ? "Buy DEX → Sell CEX"
-                          : "Buy CEX → Sell DEX"}
-                      </span>
-                    </div>
-                    <div className="text-right flex items-center gap-4">
-                      <div className="text-right">
-                        <div className="text-emerald-400 font-bold text-lg">
-                          +{opp.edge_after_costs_bps.toFixed(1)} bps
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          Raw: {opp.raw_spread_bps.toFixed(0)} − Costs:{" "}
-                          {opp.estimated_cost_bps.toFixed(0)}
-                        </div>
-                      </div>
-                      <span className="text-slate-400 bg-slate-800/50 px-2 py-1 rounded">
-                        ${opp.suggested_size_usdt}
-                      </span>
-                      <span className="text-emerald-400 text-xl">→</span>
-                    </div>
-                  </div>
-                  {/* Fees breakdown */}
-                  <div className="mt-2 pt-2 border-t border-slate-700/50 text-xs text-slate-500 flex flex-wrap gap-3">
-                    <span>
-                      CEX Fee: {opp.cost_breakdown?.cex_fee_bps || 20} bps
-                    </span>
-                    <span>
-                      DEX LP: {opp.cost_breakdown?.dex_lp_fee_bps || 30} bps
-                    </span>
-                    <span>
-                      Gas: {opp.cost_breakdown?.gas_cost_bps?.toFixed(1) || 50}{" "}
-                      bps
-                    </span>
-                    <span>
-                      Slippage: {opp.cost_breakdown?.slippage_bps || 10} bps
-                    </span>
-                    <span className="ml-auto text-emerald-500/70">
-                      Click to trade →
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Main Market Cards - Side by Side */}
-        <section className="mb-8">
-          <h2 className="text-xl font-semibold mb-4 text-emerald-400">
-            Markets
-          </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <MarketCard
-              title="CSR / USDT"
-              market={
-                data?.market_state?.csr_usdt || {
-                  lbank_ticker: undefined,
-                  uniswap_quote: undefined,
-                  decision: undefined,
-                }
-              }
-              lbankHealth={data?.system_status.lbank_gateway}
-              priceHistory={priceHistory.csr_usdt}
-              wallet={{
-                isConnected: wallet.isConnected,
-                signer: wallet.signer,
-              }}
-              onExecuteTrade={handleExecuteTrade}
-            />
-            <MarketCard
-              title="CSR25 / USDT"
-              market={
-                data?.market_state?.csr25_usdt || {
-                  lbank_ticker: undefined,
-                  uniswap_quote: undefined,
-                  decision: undefined,
-                }
-              }
-              lbankHealth={data?.system_status.lbank_gateway}
-              priceHistory={priceHistory.csr25_usdt}
-              wallet={{
-                isConnected: wallet.isConnected,
-                signer: wallet.signer,
-              }}
-              onExecuteTrade={handleExecuteTrade}
-            />
+            <span className="text-xs text-slate-500">
+              Primary objective: Keep DEX aligned with CEX
+            </span>
           </div>
-        </section>
-
-        {/* DEX Price Alignment Section */}
-        <section className="mb-8">
-          <h2 className="text-xl font-semibold mb-4 text-emerald-400 flex items-center gap-2">
-            🎯 DEX Price Alignment
-          </h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* CSR Alignment */}
-            <AlignmentPanel
-              market="CSR_USDT"
+            <PriceAlignmentCard
+              token="CSR"
               cexPrice={data?.market_state?.csr_usdt?.latoken_ticker?.bid || 0}
-              cexSource="LATOKEN"
-              quotes={
-                scraperData?.quotes
-                  ?.filter((q) => q.market === "CSR_USDT")
-                  .map((q) => ({
-                    amountInUSDT: q.amountInUSDT,
-                    price_usdt_per_token: q.price_usdt_per_token,
-                    price_token_per_usdt: q.price_token_per_usdt,
-                    valid: q.valid,
-                    gasEstimateUsdt: q.gasEstimateUsdt,
-                  })) || []
-              }
+              dexQuotes={csrDexQuotes}
+              executionMode={executionMode}
+              onExecute={handleAlignmentExecute}
             />
-            {/* CSR25 Alignment */}
-            <AlignmentPanel
-              market="CSR25_USDT"
+            <PriceAlignmentCard
+              token="CSR25"
               cexPrice={data?.market_state?.csr25_usdt?.lbank_ticker?.bid || 0}
-              cexSource="LBANK"
-              quotes={
-                scraperData?.quotes
-                  ?.filter((q) => q.market === "CSR25_USDT")
-                  .map((q) => ({
-                    amountInUSDT: q.amountInUSDT,
-                    price_usdt_per_token: q.price_usdt_per_token,
-                    price_token_per_usdt: q.price_token_per_usdt,
-                    valid: q.valid,
-                    gasEstimateUsdt: q.gasEstimateUsdt,
-                  })) || []
-              }
+              dexQuotes={csr25DexQuotes}
+              executionMode={executionMode}
+              onExecute={handleAlignmentExecute}
             />
           </div>
         </section>
 
-        {/* Transaction History Section */}
-        <section className="mb-8">
-          <h2 className="text-xl font-semibold mb-4 text-emerald-400 flex items-center gap-2">
-            📜 Transaction History
-          </h2>
-          <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl p-6 border border-slate-700">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-slate-400 border-b border-slate-700">
-                    <th className="text-left py-3 px-2">Time</th>
-                    <th className="text-left py-3 px-2">Pair</th>
-                    <th className="text-left py-3 px-2">Direction</th>
-                    <th className="text-right py-3 px-2">CEX Price</th>
-                    <th className="text-right py-3 px-2">DEX Price</th>
-                    <th className="text-right py-3 px-2">Edge (bps)</th>
-                    <th className="text-right py-3 px-2">Size</th>
-                    <th className="text-center py-3 px-2">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Sample dry-run decision history - in production would come from backend */}
-                  {data?.opportunities && data.opportunities.length > 0 ? (
-                    data.opportunities.map((opp, i) => (
-                      <tr
-                        key={i}
-                        className="border-b border-slate-700/50 hover:bg-slate-800/50"
-                      >
-                        <td className="py-3 px-2 text-slate-400">
-                          {new Date(opp.ts).toLocaleTimeString()}
-                        </td>
-                        <td className="py-3 px-2 font-medium text-white">
-                          {opp.symbol.toUpperCase()}
-                        </td>
-                        <td className="py-3 px-2">
-                          <span
-                            className={`px-2 py-1 rounded text-xs ${
-                              opp.direction === "buy_dex_sell_cex"
-                                ? "bg-blue-500/20 text-blue-400"
-                                : "bg-purple-500/20 text-purple-400"
-                            }`}
-                          >
-                            {opp.direction === "buy_dex_sell_cex"
-                              ? "DEX→CEX"
-                              : "CEX→DEX"}
-                          </span>
-                        </td>
-                        <td className="py-3 px-2 text-right font-mono text-slate-300">
-                          ${formatPrice(opp.lbank_ask)}
-                        </td>
-                        <td className="py-3 px-2 text-right font-mono text-blue-400">
-                          ${formatPrice(opp.uniswap_price)}
-                        </td>
-                        <td className="py-3 px-2 text-right">
-                          <span className="text-emerald-400 font-medium">
-                            +{opp.edge_after_costs_bps.toFixed(1)}
-                          </span>
-                        </td>
-                        <td className="py-3 px-2 text-right font-mono text-slate-300">
-                          ${opp.suggested_size_usdt}
-                        </td>
-                        <td className="py-3 px-2 text-center">
-                          <span className="px-2 py-1 rounded text-xs bg-yellow-500/20 text-yellow-400">
-                            Dry Run
-                          </span>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        className="py-8 text-center text-slate-500"
-                      >
-                        No trading opportunities detected yet. Monitoring
-                        markets...
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="mt-4 pt-4 border-t border-slate-700 flex items-center justify-between text-xs text-slate-500">
-              <span>⚠️ DRY RUN MODE - No actual trades executed</span>
-              <span>
-                Showing latest {data?.opportunities?.length || 0} opportunities
-              </span>
-            </div>
+        {/* SECONDARY: Market Context (Collapsed) */}
+        <section className="mb-6">
+          <h3 className="text-sm font-medium text-slate-400 mb-3">Market Context</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <MarketContextCard
+              token="CSR"
+              cexData={data?.market_state?.csr_usdt?.latoken_ticker ? {
+                bid: data.market_state.csr_usdt.latoken_ticker.bid,
+                ask: data.market_state.csr_usdt.latoken_ticker.ask,
+                last: data.market_state.csr_usdt.latoken_ticker.last,
+                volume24h: data.market_state.csr_usdt.latoken_ticker.volume_24h || 0,
+                source: "LATOKEN",
+                timestamp: timeAgo(data.market_state.csr_usdt.latoken_ticker.ts),
+              } : null}
+              dexData={csrDexQuotes.length > 0 ? {
+                executionPrice: csrDexQuotes[0].executionPrice,
+                gasEstimateUsdt: csrDexQuotes[0].gasEstimateUsdt,
+                slippagePercent: csrDexQuotes[0].slippagePercent,
+                quoteSize: csrDexQuotes[0].amountInUSDT,
+                route: "Uniswap V3",
+                source: "UI Scrape",
+                timestamp: "live",
+              } : null}
+            />
+            <MarketContextCard
+              token="CSR25"
+              cexData={data?.market_state?.csr25_usdt?.lbank_ticker ? {
+                bid: data.market_state.csr25_usdt.lbank_ticker.bid,
+                ask: data.market_state.csr25_usdt.lbank_ticker.ask,
+                last: data.market_state.csr25_usdt.lbank_ticker.last,
+                volume24h: data.market_state.csr25_usdt.lbank_ticker.volume_24h,
+                source: "LBANK",
+                timestamp: timeAgo(data.market_state.csr25_usdt.lbank_ticker.ts),
+              } : null}
+              dexData={csr25DexQuotes.length > 0 ? {
+                executionPrice: csr25DexQuotes[0].executionPrice,
+                gasEstimateUsdt: csr25DexQuotes[0].gasEstimateUsdt,
+                slippagePercent: csr25DexQuotes[0].slippagePercent,
+                quoteSize: csr25DexQuotes[0].amountInUSDT,
+                route: "Uniswap V3",
+                source: "UI Scrape",
+                timestamp: "live",
+              } : null}
+            />
+          </div>
+        </section>
+
+        {/* ADVANCED: Arbitrage Metrics (Collapsed) */}
+        <section className="mb-6">
+          <h3 className="text-sm font-medium text-slate-400 mb-3">Advanced Analytics</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <AdvancedMetricsCard
+              token="CSR"
+              cexPrice={data?.market_state?.csr_usdt?.latoken_ticker?.bid || 0}
+              dexPrice={csrDexQuotes[0]?.executionPrice || 0}
+              spreadHistory={priceHistory.csr_usdt.map(p => ({
+                timestamp: new Date(p.ts).getTime(),
+                spreadBps: p.spread_bps,
+              }))}
+              transactions={[]}
+            />
+            <AdvancedMetricsCard
+              token="CSR25"
+              cexPrice={data?.market_state?.csr25_usdt?.lbank_ticker?.bid || 0}
+              dexPrice={csr25DexQuotes[0]?.executionPrice || 0}
+              spreadHistory={priceHistory.csr25_usdt.map(p => ({
+                timestamp: new Date(p.ts).getTime(),
+                spreadBps: p.spread_bps,
+              }))}
+              transactions={[]}
+            />
           </div>
         </section>
 
         {/* Footer */}
-        <footer className="text-center text-slate-500 text-sm mt-12 pb-4">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <img
-              src="/depollute-logo-256.png"
-              alt="Depollute"
-              className="h-6 w-6 opacity-50"
-            />
-            <span className="text-emerald-400/50">Depollute Now!</span>
+        <footer className="text-center text-slate-600 text-xs mt-8 pb-4 border-t border-slate-800 pt-4">
+          <div className="flex items-center justify-center gap-2 mb-1">
+            <img src="/depollute-logo-256.png" alt="Depollute" className="h-4 w-4 opacity-40" />
+            <span>Depollute Now! DEX Price Defense Platform</span>
           </div>
-          <p>Depollute Now! CSR Trading Platform</p>
-          <p className="mt-1 text-slate-600">
-            Data refreshes automatically via WebSocket
-          </p>
+          <p>Data refreshes automatically • {killSwitchActive ? "🛑 Kill Switch Active" : "🛡️ System Protected"}</p>
         </footer>
       </div>
     </div>
