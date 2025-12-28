@@ -309,43 +309,28 @@ export function AlignmentDisplay({
           </span>
         </div>
 
-        {/* THE CORE ANSWER - From Backend Only */}
-        <div className="bg-slate-900/70 rounded-xl p-4 mb-4">
-          <div className="text-xs text-slate-400 mb-2">
-            Required Trade Size (from backend)
-          </div>
-          <div className="flex items-baseline gap-3">
-            <span className="text-3xl font-mono font-bold text-white">
-              {formatTokens(alignment.required_tokens)} {token}
-            </span>
-            <span className="text-lg font-mono text-slate-400">
-              ≈ ${alignment.required_usdt?.toLocaleString() || "—"}
-            </span>
-          </div>
-        </div>
-
-        {/* Expected Outcome */}
-        <div className="grid grid-cols-3 gap-3 text-sm mb-4">
-          <div className="bg-slate-900/50 rounded-lg p-3">
-            <div className="text-xs text-slate-500 mb-1">Expected Price</div>
-            <div className="font-mono text-emerald-400">
-              ${formatPrice(alignment.expected_exec_price)}
-            </div>
-          </div>
-          <div className="bg-slate-900/50 rounded-lg p-3">
-            <div className="text-xs text-slate-500 mb-1">Gas Cost</div>
-            <div className="font-mono text-slate-300">
+        {/* Key Metrics - Gas Cost and Price Impact from scraping */}
+        <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+          <div className="bg-slate-900/70 rounded-xl p-4">
+            <div className="text-xs text-slate-500 mb-1">Current Gas Cost</div>
+            <div className="font-mono text-2xl text-white">
               {alignment.network_cost_usd !== null
-                ? `~$${alignment.network_cost_usd.toFixed(2)}`
+                ? `$${alignment.network_cost_usd.toFixed(2)}`
                 : "—"}
             </div>
+            <div className="text-xs text-slate-500 mt-1">
+              Network fee (from scraping)
+            </div>
           </div>
-          <div className="bg-slate-900/50 rounded-lg p-3">
-            <div className="text-xs text-slate-500 mb-1">Price Impact</div>
-            <div className="font-mono text-slate-300">
+          <div className="bg-slate-900/70 rounded-xl p-4">
+            <div className="text-xs text-slate-500 mb-1">Avg Price Impact</div>
+            <div className="font-mono text-2xl text-white">
               {alignment.price_impact_pct !== null
-                ? `~${alignment.price_impact_pct.toFixed(2)}%`
+                ? `${alignment.price_impact_pct.toFixed(2)}%`
                 : "—"}
+            </div>
+            <div className="text-xs text-slate-500 mt-1">
+              See Trade Simulations for sizes
             </div>
           </div>
         </div>
