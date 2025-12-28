@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useUniswapSwap } from "./hooks/useUniswapSwap";
+import { UniswapTradePanel } from "./components/UniswapTradePanel";
 import { useWallet } from "./hooks/useWallet";
 
 // In production (behind nginx), use relative URLs. In dev, use localhost.
@@ -685,39 +685,24 @@ function App() {
 
   // Wallet integration
   const wallet = useWallet();
-  const { executeSwap } = useUniswapSwap();
 
-  // Handle trade execution
-  const handleExecuteTrade = async (
+  // Trade panel state
+  const [showTradePanel, setShowTradePanel] = useState<{
+    token: "CSR" | "CSR25";
+    direction: "buy" | "sell";
+  } | null>(null);
+
+  // Handle trade button click - opens the trade panel
+  const handleExecuteTrade = (
     direction: string,
-    size: number,
+    _size: number,
     token: string
   ) => {
-    if (!wallet.signer) {
-      alert("Wallet not connected");
-      return;
-    }
-
-    try {
-      const tokenType = token as "CSR" | "CSR25";
-      const isBuyDex = direction === "buy_dex_sell_cex";
-
-      const result = await executeSwap(wallet.signer, {
-        tokenIn: isBuyDex ? "USDT" : tokenType,
-        tokenOut: isBuyDex ? tokenType : "USDT",
-        amountIn: size.toString(),
-        slippageBps: 50, // 0.5% slippage
-      });
-
-      if (result.success) {
-        alert(`✅ Trade executed!\n\nTx: ${result.txHash}`);
-      } else {
-        alert(`Trade Info:\n\n${result.error}`);
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Trade failed";
-      alert(`❌ Error: ${message}`);
-    }
+    const isBuyDex = direction === "buy_dex_sell_cex";
+    setShowTradePanel({
+      token: token as "CSR" | "CSR25",
+      direction: isBuyDex ? "buy" : "sell",
+    });
   };
 
   // Fetch price history periodically
@@ -803,6 +788,39 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-900 text-white px-4 sm:px-6 lg:px-8 py-6">
+      {/* Trade Panel Modal */}
+      {showTradePanel && data && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="relative max-w-md w-full">
+            <button
+              onClick={() => setShowTradePanel(null)}
+              className="absolute -top-2 -right-2 bg-gray-700 hover:bg-gray-600 rounded-full w-8 h-8 flex items-center justify-center text-white z-10"
+            >
+              ✕
+            </button>
+            <UniswapTradePanel
+              token={showTradePanel.token}
+              direction={showTradePanel.direction}
+              dexPrice={
+                showTradePanel.token === "CSR"
+                  ? data.market_state?.csr_usdt?.uniswap_quote
+                      ?.effective_price_usdt || 0
+                  : data.market_state?.csr25_usdt?.uniswap_quote
+                      ?.effective_price_usdt || 0
+              }
+              cexPrice={
+                showTradePanel.token === "CSR"
+                  ? data.market_state?.csr_usdt?.latoken_ticker?.ask || 0
+                  : data.market_state?.csr25_usdt?.lbank_ticker?.ask || 0
+              }
+              signer={wallet.signer}
+              isConnected={wallet.isConnected}
+              onConnect={wallet.connect}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="max-w-6xl mx-auto w-full">
         {/* Header */}
         <header className="mb-8">
