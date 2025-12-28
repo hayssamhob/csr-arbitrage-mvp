@@ -80,29 +80,31 @@ export class V4SubgraphGatewayReader {
   ): number {
     // sqrtPriceX96 is Q64.96 format: sqrtPrice = sqrt(price) * 2^96
     // price = (sqrtPriceX96 / 2^96)^2
+    // This gives price of token1 in terms of token0 (in raw units)
     const sqrtPriceX96 = BigInt(pool.sqrtPriceX96);
     const Q96 = BigInt(2) ** BigInt(96);
 
-    // Calculate raw price as a number
-    // rawPrice = token1/token0 in raw (wei) units
     const sqrtPriceFloat = Number(sqrtPriceX96) / Number(Q96);
     const rawPrice = sqrtPriceFloat * sqrtPriceFloat;
+    // rawPrice = currency1_amount / currency0_amount (in wei)
 
     const isUsdtCurrency0 =
       pool.currency0.toLowerCase() === usdtAddress.toLowerCase();
 
-    // Adjust for decimals
-    // If USDT is currency0: rawPrice = TOKEN/USDT in raw, need to convert
-    // If USDT is currency1: rawPrice = USDT/TOKEN in raw
-
+    // We want: price of TOKEN in USDT (how many USDT per 1 TOKEN)
     if (isUsdtCurrency0) {
-      // rawPrice = currency1/currency0 = TOKEN/USDT (in raw units)
-      // To get USDT per TOKEN: 1/rawPrice, then adjust decimals
+      // currency0 = USDT, currency1 = TOKEN
+      // rawPrice = TOKEN_wei / USDT_wei
+      // We want USDT/TOKEN, so invert: 1/rawPrice
+      // Decimal adjustment: multiply by 10^(currency0_decimals - currency1_decimals)
+      // = 10^(6 - 18) = 10^-12
       const decimalAdjustment = 10 ** (usdtDecimals - tokenDecimals);
-      return (1 / rawPrice) * decimalAdjustment;
+      return decimalAdjustment / rawPrice;
     } else {
-      // rawPrice = currency1/currency0 = USDT/TOKEN (in raw units)
-      // This IS USDT per TOKEN, just need decimal adjustment
+      // currency0 = TOKEN, currency1 = USDT
+      // rawPrice = USDT_wei / TOKEN_wei = price in wei terms
+      // Decimal adjustment: multiply by 10^(currency0_decimals - currency1_decimals)
+      // = 10^(18 - 6) = 10^12
       const decimalAdjustment = 10 ** (tokenDecimals - usdtDecimals);
       return rawPrice * decimalAdjustment;
     }

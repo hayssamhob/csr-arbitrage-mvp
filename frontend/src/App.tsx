@@ -482,8 +482,8 @@ function App() {
   }, [error]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-900 text-white p-6">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-900 text-white px-4 sm:px-6 lg:px-8 py-6">
+      <div className="max-w-6xl mx-auto w-full">
         {/* Header */}
         <header className="mb-8">
           <div className="flex items-center justify-between">
