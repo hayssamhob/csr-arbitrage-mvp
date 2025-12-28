@@ -932,12 +932,23 @@ function App() {
                         ? "Ethereum"
                         : `Chain ${wallet.chainId}`}
                     </div>
-                    <button
-                      onClick={wallet.disconnect}
-                      className="mt-1 text-xs text-red-400 hover:text-red-300"
-                    >
-                      Disconnect
-                    </button>
+                    <div className="flex gap-2 mt-1 justify-end">
+                      <button
+                        onClick={async () => {
+                          wallet.disconnect();
+                          setTimeout(() => wallet.connect(), 100);
+                        }}
+                        className="text-xs text-blue-400 hover:text-blue-300"
+                      >
+                        Switch
+                      </button>
+                      <button
+                        onClick={wallet.disconnect}
+                        className="text-xs text-red-400 hover:text-red-300"
+                      >
+                        Disconnect
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <button

@@ -2,6 +2,7 @@ import { ethers } from "ethers";
 import { Config, TokenConfig } from "./config";
 import { CachedQuote, UniswapQuoteResult } from "./schemas";
 import { SmartRouterService } from "./smartRouterService";
+import { UniswapHttpQuoteService } from "./uniswapHttpQuoteService";
 import { V4SubgraphGatewayReader } from "./v4SubgraphGatewayReader";
 
 // ============================================================================
@@ -36,6 +37,7 @@ export class QuoteService {
   private poolId: string;
   private v4Reader: V4SubgraphGatewayReader;
   private smartRouter: SmartRouterService;
+  private httpQuoteService: UniswapHttpQuoteService;
   private usdtToken: TokenConfig;
   private csrToken: TokenConfig;
   private csr25Token: TokenConfig;
@@ -48,10 +50,13 @@ export class QuoteService {
     // Initialize provider - REAL ON-CHAIN DATA ONLY
     this.provider = new ethers.providers.JsonRpcProvider(config.RPC_URL);
 
-    // Initialize Smart Order Router (PRIMARY SOURCE - real Uniswap quotes)
+    // Initialize HTTP Quote Service (PRIMARY - uses QuoterV2 contract directly)
+    this.httpQuoteService = new UniswapHttpQuoteService(config.RPC_URL, onLog);
+
+    // Initialize Smart Order Router (SECONDARY - may have SDK issues)
     this.smartRouter = new SmartRouterService(config.RPC_URL, onLog);
 
-    // Initialize V4 subgraph reader (FALLBACK)
+    // Initialize V4 subgraph reader (LAST RESORT - prices can be stale)
     const subgraphUrl = `https://gateway.thegraph.com/api/${config.GRAPH_API_KEY}/subgraphs/id/${config.UNISWAP_V4_SUBGRAPH_ID}`;
     this.v4Reader = new V4SubgraphGatewayReader(subgraphUrl);
 
@@ -161,7 +166,67 @@ export class QuoteService {
       this.tokenOut.symbol === "CSR" ? this.csrToken : this.csr25Token;
     const tokenType = targetToken.symbol === "CSR" ? "CSR" : "CSR25";
 
-    // PRIMARY: Use Uniswap Smart Order Router for REAL swap quotes
+    // PRIMARY: Use HTTP Quote Service (QuoterV2 contract directly) for REAL prices
+    try {
+      const httpResult =
+        direction === "buy"
+          ? await this.httpQuoteService.quoteBuyTokens(
+              tokenType as "CSR" | "CSR25",
+              amountUsdt
+            )
+          : await this.httpQuoteService.getTokenPrice(
+              tokenType as "CSR" | "CSR25"
+            );
+
+      if (!httpResult.error && httpResult.effectivePrice > 0) {
+        this.onLog("info", "http_quote_success", {
+          token: targetToken.symbol,
+          price: httpResult.effectivePrice,
+          source: httpResult.source,
+          route: httpResult.route,
+        });
+
+        return {
+          type: "uniswap.quote",
+          pair: `${targetToken.symbol}/USDT`,
+          chain_id: this.chainId,
+          ts: now,
+          amount_in: httpResult.amountIn,
+          amount_in_unit: direction === "buy" ? "USDT" : targetToken.symbol,
+          amount_out: httpResult.amountOut,
+          amount_out_unit: direction === "buy" ? targetToken.symbol : "USDT",
+          effective_price_usdt: httpResult.effectivePrice,
+          estimated_gas: 150000,
+          pool_fee: 0.3,
+          price_impact: httpResult.priceImpactPercent,
+          price_impact_percent: `${httpResult.priceImpactPercent.toFixed(2)}%`,
+          gas_cost_usdt: httpResult.gasEstimateUsd,
+          gas_cost_eth: (httpResult.gasEstimateUsd / 3500).toFixed(6),
+          max_slippage: "Auto / 0.50%",
+          order_routing: "Uniswap API",
+          fee_display: "Free",
+          route: {
+            summary: httpResult.route,
+            pools: [httpResult.route],
+          },
+          is_stale: false,
+          validated: true,
+          source: "quoter_v2",
+        };
+      }
+
+      this.onLog("warn", "http_quote_failed_trying_smart_router", {
+        token: targetToken.symbol,
+        error: httpResult.error,
+      });
+    } catch (httpError) {
+      this.onLog("warn", "http_quote_exception", {
+        error:
+          httpError instanceof Error ? httpError.message : String(httpError),
+      });
+    }
+
+    // SECONDARY: Try Smart Order Router
     try {
       const routerResult =
         direction === "buy"
@@ -178,9 +243,6 @@ export class QuoteService {
         this.onLog("info", "smart_router_success", {
           token: targetToken.symbol,
           price: routerResult.executionPrice,
-          priceImpact: routerResult.priceImpact,
-          gasEstimateUSD: routerResult.gasEstimateUSD,
-          route: routerResult.route,
         });
 
         return {
@@ -215,11 +277,6 @@ export class QuoteService {
           source: "smart_router",
         };
       }
-
-      this.onLog("warn", "smart_router_failed_trying_subgraph", {
-        token: targetToken.symbol,
-        error: routerResult.error,
-      });
     } catch (routerError) {
       this.onLog("warn", "smart_router_exception", {
         error:
