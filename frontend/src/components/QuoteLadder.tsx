@@ -57,22 +57,20 @@ export function QuoteLadder({ token }: QuoteLadderProps) {
     return () => clearInterval(interval);
   }, [token]);
 
+  // Color code vs CEX: green near 0% (balanced), yellow/orange/red further away
   const getDeviationColor = (deviation: number | null) => {
     if (deviation === null) return "text-slate-500";
     const abs = Math.abs(deviation);
-    if (abs <= 0.5) return "text-emerald-400";
-    if (abs <= 1.0) return "text-blue-400";
-    if (abs <= 2.0) return "text-yellow-400";
-    return "text-red-400";
+    if (abs <= 0.5) return "text-emerald-400"; // Very close to balance
+    if (abs <= 1.0) return "text-emerald-300"; // Close to balance
+    if (abs <= 2.0) return "text-yellow-400"; // Moderate deviation
+    if (abs <= 5.0) return "text-orange-400"; // High deviation
+    return "text-red-400"; // Very high deviation
   };
 
-  const getImpactColor = (impact: number | null) => {
-    if (impact === null) return "text-slate-500";
-    if (impact <= 0.5) return "text-emerald-400";
-    if (impact <= 1.0) return "text-blue-400";
-    if (impact <= 2.0) return "text-yellow-400";
-    if (impact <= 5.0) return "text-orange-400";
-    return "text-red-400";
+  // No color coding for Impact - just neutral color
+  const getImpactColor = (_impact: number | null) => {
+    return "text-slate-300"; // Neutral color for all impact values
   };
 
   const getAgeColor = (age: number | null) => {
