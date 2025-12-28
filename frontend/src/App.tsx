@@ -437,46 +437,73 @@ function MarketCard({
           </div>
           <div className="space-y-2 text-sm">
             {(() => {
-              const cexPrice = isCSR
-                ? (latoken?.bid || 0 + (latoken?.ask || 0)) / 2
-                : (lbank?.bid || 0 + (lbank?.ask || 0)) / 2;
+              // Fixed: proper parentheses for CEX mid-price
+              const cexBid = isCSR ? latoken?.bid || 0 : lbank?.bid || 0;
+              const cexAsk = isCSR ? latoken?.ask || 0 : lbank?.ask || 0;
+              const cexMidPrice = (cexBid + cexAsk) / 2;
               const dexPrice = uniswap.effective_price_usdt;
-              const priceDiff = cexPrice - dexPrice;
-              const buyOnDex = priceDiff > 0;
+              const priceDiffPct = ((cexMidPrice - dexPrice) / dexPrice) * 100;
+              const buyOnDex = cexMidPrice > dexPrice;
 
-              if (Math.abs(priceDiff) < 0.000001) {
+              if (Math.abs(priceDiffPct) < 0.1) {
                 return (
-                  <div className="text-slate-500">Prices are balanced</div>
+                  <div className="text-slate-500">
+                    Prices balanced (within 0.1%)
+                  </div>
                 );
               }
 
               const targetSize = 1000;
-              const tokensToTrade = targetSize / dexPrice;
-              const profitUsdt = Math.abs(priceDiff) * tokensToTrade;
+              const tokensFor1000 = targetSize / dexPrice;
+              const grossProfit =
+                Math.abs(cexMidPrice - dexPrice) * tokensFor1000;
 
               return (
                 <>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Strategy</span>
-                    <span
-                      className={
-                        buyOnDex ? "text-emerald-400" : "text-blue-400"
-                      }
-                    >
-                      {buyOnDex ? "Buy DEX → Sell CEX" : "Buy CEX → Sell DEX"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">For $1000 USDT</span>
+                    <span className="text-slate-400">CEX Mid</span>
                     <span className="font-mono">
-                      {tokensToTrade.toFixed(2)} tokens
+                      ${formatPrice(cexMidPrice)}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Est. Profit (gross)</span>
-                    <span className="font-mono text-emerald-400">
-                      ${profitUsdt.toFixed(2)}
+                    <span className="text-slate-400">DEX Mid</span>
+                    <span className="font-mono">${formatPrice(dexPrice)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Gap</span>
+                    <span
+                      className={`font-mono ${
+                        priceDiffPct > 0 ? "text-emerald-400" : "text-red-400"
+                      }`}
+                    >
+                      {priceDiffPct > 0 ? "+" : ""}
+                      {priceDiffPct.toFixed(2)}%
                     </span>
+                  </div>
+                  <div className="border-t border-slate-700 pt-2 mt-2">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Strategy</span>
+                      <span
+                        className={
+                          buyOnDex ? "text-emerald-400" : "text-blue-400"
+                        }
+                      >
+                        {buyOnDex ? "Buy DEX → Sell CEX" : "Buy CEX → Sell DEX"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">$1000 gets</span>
+                      <span className="font-mono">
+                        {tokensFor1000.toFixed(2)} tokens
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Gross Profit</span>
+                      <span className="font-mono text-emerald-400">
+                        ${grossProfit.toFixed(2)}
+                      </span>
+                    </div>
                   </div>
                 </>
               );
