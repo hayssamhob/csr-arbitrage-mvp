@@ -2,10 +2,11 @@ import { ethers } from "ethers";
 import { Config, TokenConfig } from "./config";
 import { QuoterV2Service } from "./quoterV2Service";
 import { CachedQuote, UniswapQuoteResult } from "./schemas";
+import { UniswapApiService } from "./uniswapApiService";
 import { V4SubgraphGatewayReader } from "./v4SubgraphGatewayReader";
 
 // ============================================================================
-// Uniswap Quote Service - Uses QuoterV2 for Real On-Chain Prices
+// Uniswap Quote Service - Uses Uniswap API for Real Prices
 // READ-ONLY: Returns actual executable swap prices from Uniswap
 // Falls back to V4 subgraph if QuoterV2 fails
 // No execution, no signing.
@@ -36,6 +37,7 @@ export class QuoteService {
   private poolId: string;
   private v4Reader: V4SubgraphGatewayReader;
   private quoterV2: QuoterV2Service;
+  private uniswapApi: UniswapApiService;
   private usdtToken: TokenConfig;
   private csrToken: TokenConfig;
   private csr25Token: TokenConfig;
@@ -48,7 +50,10 @@ export class QuoteService {
     // Initialize provider - REAL ON-CHAIN DATA ONLY
     this.provider = new ethers.providers.JsonRpcProvider(config.RPC_URL);
 
-    // Initialize QuoterV2 for real on-chain quotes (PRIMARY SOURCE)
+    // Initialize Uniswap API service (PRIMARY SOURCE - same as Uniswap UI)
+    this.uniswapApi = new UniswapApiService(onLog);
+
+    // Initialize QuoterV2 for on-chain quotes (FALLBACK 1)
     this.quoterV2 = new QuoterV2Service(
       config.RPC_URL,
       config.CSR_CONFIG.address,
@@ -56,7 +61,7 @@ export class QuoteService {
       onLog
     );
 
-    // Initialize V4 subgraph reader as fallback
+    // Initialize V4 subgraph reader (FALLBACK 2)
     const subgraphUrl = `https://gateway.thegraph.com/api/${config.GRAPH_API_KEY}/subgraphs/id/${config.UNISWAP_V4_SUBGRAPH_ID}`;
     this.v4Reader = new V4SubgraphGatewayReader(subgraphUrl);
 
@@ -166,7 +171,65 @@ export class QuoteService {
       this.tokenOut.symbol === "CSR" ? this.csrToken : this.csr25Token;
     const tokenType = targetToken.symbol === "CSR" ? "CSR" : "CSR25";
 
-    // PRIMARY: Try QuoterV2 for real on-chain quotes
+    // PRIMARY: Try Uniswap API (same as Uniswap UI)
+    try {
+      const apiResult =
+        direction === "buy"
+          ? await this.uniswapApi.getQuoteBuy(
+              tokenType as "CSR" | "CSR25",
+              amountUsdt
+            )
+          : await this.uniswapApi.getQuoteSell(
+              tokenType as "CSR" | "CSR25",
+              amountUsdt
+            );
+
+      if (!apiResult.error && apiResult.price > 0) {
+        this.onLog("info", "uniswap_api_success", {
+          token: targetToken.symbol,
+          price: apiResult.price,
+          priceImpact: apiResult.priceImpact,
+          gasFeeUSD: apiResult.gasFeeUSD,
+        });
+
+        // Calculate output amount
+        let outputAmount: number;
+        if (direction === "buy") {
+          outputAmount = amountUsdt / apiResult.price;
+        } else {
+          outputAmount = amountUsdt * apiResult.price;
+        }
+
+        return {
+          type: "uniswap.quote",
+          pair: `${targetToken.symbol}/USDT`,
+          chain_id: this.chainId,
+          ts: now,
+          amount_in: amountUsdt.toString(),
+          amount_in_unit: direction === "buy" ? "USDT" : targetToken.symbol,
+          amount_out: outputAmount.toFixed(6),
+          amount_out_unit: direction === "buy" ? targetToken.symbol : "USDT",
+          effective_price_usdt: apiResult.price,
+          estimated_gas: Math.round(apiResult.gasFeeUSD * 100), // Approximate gas units
+          pool_fee: 0.3, // Standard fee
+          price_impact: apiResult.priceImpact,
+          is_stale: false,
+          validated: true,
+          source: "uniswap_api",
+        };
+      }
+
+      this.onLog("warn", "uniswap_api_failed_trying_quoter", {
+        token: targetToken.symbol,
+        error: apiResult.error,
+      });
+    } catch (apiError) {
+      this.onLog("warn", "uniswap_api_exception", {
+        error: apiError instanceof Error ? apiError.message : String(apiError),
+      });
+    }
+
+    // FALLBACK 1: Try QuoterV2 for on-chain quotes
     try {
       const quoterResult =
         direction === "buy"
@@ -187,7 +250,6 @@ export class QuoteService {
           gasEstimate: quoterResult.gasEstimate,
         });
 
-        // Calculate output amount
         let outputAmount: number;
         if (direction === "buy") {
           outputAmount = amountUsdt / quoterResult.effectivePrice;
