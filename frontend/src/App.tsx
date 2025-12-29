@@ -189,7 +189,11 @@ interface AlignmentData {
   csr25_usdt: BackendAlignment;
 }
 
-function App() {
+interface AppProps {
+  executionMode?: "OFF" | "MANUAL" | "AUTO";
+}
+
+function App({ executionMode = "MANUAL" }: AppProps) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [error, setError] = useState<string | null>(null);
@@ -209,9 +213,6 @@ function App() {
     dexPrice: number;
     cexPrice: number;
   } | null>(null);
-  const [executionMode, setExecutionMode] = useState<"OFF" | "MANUAL" | "AUTO">(
-    "OFF"
-  );
   const [killSwitchActive, setKillSwitchActive] = useState(false);
 
   // Convert scraper quotes to DexQuote format
@@ -527,11 +528,11 @@ function App() {
 
   return (
     <div className="text-white">
-      {/* Global Status Bar */}
+      {/* Global Status Bar - service health indicators only */}
       <GlobalStatusBar
         services={services}
         executionMode={executionMode}
-        onModeChange={setExecutionMode}
+        onModeChange={() => {}}
         killSwitchActive={killSwitchActive}
         onKillSwitchToggle={() => setKillSwitchActive(!killSwitchActive)}
         lastDataUpdate={lastUpdate}
