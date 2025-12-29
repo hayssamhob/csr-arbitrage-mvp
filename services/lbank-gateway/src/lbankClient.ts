@@ -294,7 +294,8 @@ export class LBankClient extends EventEmitter {
 
   private sendPong(ping: string): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ pong: ping }));
+      // LBank V2 requires action field in all messages
+      this.ws.send(JSON.stringify({ action: "pong", pong: ping }));
       this.onLog("debug", "pong_sent", { ping });
     }
   }
@@ -304,9 +305,9 @@ export class LBankClient extends EventEmitter {
 
     this.pingTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
-        // LBank V2 WebSocket ping format (simple timestamp)
+        // LBank V2 WebSocket requires action field in all messages
         const pingMsg = JSON.stringify({
-          ping: Date.now().toString(),
+          action: "ping",
         });
         this.ws.send(pingMsg);
         this.onLog("debug", "ping_sent");
