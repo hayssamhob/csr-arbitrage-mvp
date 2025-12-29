@@ -90,6 +90,180 @@ function ClickablePrice({
 }
 
 
+// Trade Execution Modal with Amount Selection and Price Impact Preview
+function TradeExecutionModal({
+  opportunity,
+  onClose,
+  mode,
+}: {
+  opportunity: Opportunity;
+  onClose: () => void;
+  mode: "PAPER" | "MANUAL" | "AUTO";
+}) {
+  const [tradeSize, setTradeSize] = useState(opportunity.max_safe_size);
+  const [isExecuting, setIsExecuting] = useState(false);
+
+  // Calculate price impact based on trade size
+  const basePriceImpact = opportunity.dex_price_impact;
+  const estimatedPriceImpact = basePriceImpact * Math.sqrt(tradeSize / opportunity.dex_quote_size);
+  
+  // Calculate estimated edge after price impact
+  const priceImpactCost = (estimatedPriceImpact / 100) * tradeSize;
+  const estimatedEdgeUsd = (opportunity.edge_bps / 10000) * tradeSize - priceImpactCost;
+  const estimatedEdgeBps = Math.round((estimatedEdgeUsd / tradeSize) * 10000);
+
+  const handleExecute = async () => {
+    setIsExecuting(true);
+    try {
+      if (mode === "PAPER") {
+        console.log("Paper trade executed:", { ...opportunity, size: tradeSize });
+        alert(`✅ PAPER TRADE: ${opportunity.direction.replace(/_/g, " ")} $${tradeSize} of ${opportunity.market}\nEstimated profit: $${estimatedEdgeUsd.toFixed(2)}`);
+      } else {
+        // Real trade execution would go here
+        console.log("Manual trade:", { ...opportunity, size: tradeSize });
+        alert(`⚠️ Real trade execution not yet implemented.\nWould execute: ${opportunity.direction.replace(/_/g, " ")} $${tradeSize} of ${opportunity.market}`);
+      }
+      onClose();
+    } catch (err) {
+      console.error("Trade execution error:", err);
+      alert("Trade execution failed. Check console for details.");
+    }
+    setIsExecuting(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm">
+      <div className="bg-slate-900 rounded-xl border border-slate-700 p-6 max-w-lg w-full mx-4 shadow-2xl">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-bold">
+            {mode === "PAPER" ? "📝 Paper Trade" : "⚡ Execute Trade"}
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white">✕</button>
+        </div>
+
+        {/* Market Info */}
+        <div className="bg-slate-800/50 rounded-lg p-4 mb-4">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-lg font-bold">{opportunity.market}</span>
+            <span className={`px-2 py-1 rounded text-xs font-medium ${
+              opportunity.direction === "BUY_DEX_SELL_CEX"
+                ? "bg-emerald-500/20 text-emerald-400"
+                : "bg-blue-500/20 text-blue-400"
+            }`}>
+              {opportunity.direction.replace(/_/g, " ")}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="text-slate-400">CEX ({opportunity.cex_venue}):</span>
+              <div className="font-mono">
+                <span className="text-emerald-400">${opportunity.cex_bid.toFixed(6)}</span>
+                <span className="text-slate-500"> / </span>
+                <span className="text-red-400">${opportunity.cex_ask.toFixed(6)}</span>
+              </div>
+            </div>
+            <div>
+              <span className="text-slate-400">DEX (Uniswap):</span>
+              <div className="font-mono text-blue-400">${opportunity.dex_exec_price.toFixed(6)}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Trade Size Input */}
+        <div className="mb-4">
+          <label className="block text-sm text-slate-400 mb-2">Trade Size (USDT)</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={tradeSize}
+              onChange={(e) => setTradeSize(Math.max(10, Math.min(parseFloat(e.target.value) || 0, opportunity.max_safe_size * 2)))}
+              className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 font-mono text-lg"
+              min={10}
+              max={opportunity.max_safe_size * 2}
+              step={10}
+            />
+            <button
+              onClick={() => setTradeSize(opportunity.max_safe_size)}
+              className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm"
+            >
+              Max Safe
+            </button>
+          </div>
+          <div className="text-xs text-slate-500 mt-1">
+            Recommended max: ${opportunity.max_safe_size} • You entered: ${tradeSize}
+          </div>
+        </div>
+
+        {/* Price Impact & Cost Breakdown */}
+        <div className="bg-slate-800/30 rounded-lg p-4 mb-4 space-y-2 text-sm">
+          <div className="flex justify-between">
+            <Tooltip text="Impact on DEX price from your trade size">
+              <span className="text-slate-400 cursor-help border-b border-dotted border-slate-500">Est. Price Impact:</span>
+            </Tooltip>
+            <span className={`font-mono ${estimatedPriceImpact > 1 ? "text-amber-400" : "text-slate-300"}`}>
+              {estimatedPriceImpact.toFixed(2)}%
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <Tooltip text="Cost of price impact on your trade">
+              <span className="text-slate-400 cursor-help border-b border-dotted border-slate-500">Impact Cost:</span>
+            </Tooltip>
+            <span className="font-mono text-red-400">-${priceImpactCost.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between border-t border-slate-700 pt-2 mt-2">
+            <Tooltip text="Expected profit after all costs">
+              <span className="text-slate-300 font-medium cursor-help border-b border-dotted border-slate-500">Estimated Profit:</span>
+            </Tooltip>
+            <span className={`font-mono font-bold ${estimatedEdgeUsd >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              ${estimatedEdgeUsd.toFixed(2)} ({estimatedEdgeBps > 0 ? "+" : ""}{estimatedEdgeBps} bps)
+            </span>
+          </div>
+        </div>
+
+        {/* Warning */}
+        {estimatedPriceImpact > 2 && (
+          <div className="bg-amber-900/30 border border-amber-600/30 rounded-lg p-3 mb-4">
+            <p className="text-amber-400 text-sm">
+              ⚠️ High price impact ({estimatedPriceImpact.toFixed(1)}%). Consider reducing trade size.
+            </p>
+          </div>
+        )}
+
+        {mode !== "PAPER" && (
+          <div className="bg-yellow-900/30 border border-yellow-600/30 rounded-lg p-3 mb-4">
+            <p className="text-yellow-400 text-sm">
+              ⚠️ This will execute real trades. Ensure you have sufficient balances on both venues.
+            </p>
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-3 bg-slate-700 text-white rounded-lg hover:bg-slate-600 font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleExecute}
+            disabled={isExecuting || estimatedEdgeUsd < 0}
+            className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all ${
+              estimatedEdgeUsd < 0
+                ? "bg-slate-600 text-slate-400 cursor-not-allowed"
+                : mode === "PAPER"
+                ? "bg-yellow-600 text-white hover:bg-yellow-500"
+                : "bg-emerald-600 text-white hover:bg-emerald-500"
+            }`}
+          >
+            {isExecuting ? "Executing..." : mode === "PAPER" ? "Simulate Trade" : "Execute Trade"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface Opportunity {
   market: string;
   cex_venue: string;
@@ -636,73 +810,13 @@ export function ArbitragePage() {
           </div>
         </div>
 
-        {/* Execution Confirmation Modal */}
+        {/* Execution Confirmation Modal with Amount Selection */}
         {selectedOpp && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-slate-900 rounded-xl border border-slate-700 p-6 max-w-md w-full mx-4">
-              <h3 className="text-lg font-bold mb-4">
-                Confirm Trade Execution
-              </h3>
-
-              <div className="space-y-3 mb-6">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Market:</span>
-                  <span className="font-medium">{selectedOpp.market}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Direction:</span>
-                  <span className="font-medium">
-                    {selectedOpp.direction.replace(/_/g, " ")}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Size:</span>
-                  <span className="font-mono">
-                    ${selectedOpp.max_safe_size}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Expected Edge:</span>
-                  <span
-                    className={`font-mono ${
-                      selectedOpp.edge_usd >= 0
-                        ? "text-emerald-400"
-                        : "text-red-400"
-                    }`}
-                  >
-                    ${selectedOpp.edge_usd.toFixed(2)} ({selectedOpp.edge_bps}{" "}
-                    bps)
-                  </span>
-                </div>
-              </div>
-
-              <div className="bg-yellow-900/30 border border-yellow-600/30 rounded-lg p-3 mb-6">
-                <p className="text-yellow-400 text-sm">
-                  ⚠️ This will execute real trades. Ensure you have sufficient
-                  balances.
-                </p>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setSelectedOpp(null)}
-                  className="flex-1 px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    console.log("Executing trade:", selectedOpp);
-                    alert("Trade execution not yet implemented");
-                    setSelectedOpp(null);
-                  }}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500"
-                >
-                  Confirm Execute
-                </button>
-              </div>
-            </div>
-          </div>
+          <TradeExecutionModal
+            opportunity={selectedOpp}
+            onClose={() => setSelectedOpp(null)}
+            mode={state.mode}
+          />
         )}
       </div>
       <Footer />

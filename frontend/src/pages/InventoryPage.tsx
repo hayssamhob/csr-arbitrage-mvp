@@ -207,10 +207,9 @@ export function InventoryPage() {
   const fetchRecentTransactions = async (address: string) => {
     setLoadingTxs(true);
     try {
-      // Fetch from Etherscan API (free tier)
-      const apiKey = "YourApiKeyToken"; // Free tier works without key for limited calls
+      // Fetch from Etherscan API - using free tier
       const response = await fetch(
-        `https://api.etherscan.io/api?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&page=1&offset=10&sort=desc&apikey=${apiKey}`
+        `https://api.etherscan.io/api?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&page=1&offset=10&sort=desc`
       );
       const data = await response.json();
 
