@@ -539,6 +539,15 @@ router.get("/balances", requireAuth, async (req: AuthenticatedRequest, res) => {
     .eq("user_id", req.userId)
     .single();
 
+  // Get saved wallet address
+  const { data: wallets } = await supabase
+    .from("wallets")
+    .select("address")
+    .eq("user_id", req.userId)
+    .limit(1);
+
+  const savedWalletAddress = wallets?.[0]?.address || null;
+
   res.json({
     balances,
     total_usd: balances.reduce((sum, b) => sum + (b.usd_value || 0), 0),
@@ -549,6 +558,7 @@ router.get("/balances", requireAuth, async (req: AuthenticatedRequest, res) => {
       used_daily_usd: 0, // TODO: Track from trade history
     },
     last_update: new Date().toISOString(),
+    saved_wallet_address: savedWalletAddress,
   });
 });
 

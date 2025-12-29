@@ -47,41 +47,66 @@ interface InventoryState {
     used_daily_usd: number;
   };
   last_update: string;
+  saved_wallet_address: string | null;
 }
+
+// Cache for inventory data to avoid reloading on every page visit
+let inventoryCache: InventoryState | null = null;
+let lastFetchTime = 0;
+const CACHE_DURATION_MS = 30000; // 30 seconds
 
 export function InventoryPage() {
   const { user, getAccessToken } = useAuth();
   const wallet = useWallet();
-  const [state, setState] = useState<InventoryState>({
-    balances: [],
-    total_usd: 0,
-    exchange_statuses: {},
-    exposure: {
-      max_per_trade_usd: 1000,
-      max_daily_usd: 10000,
-      used_daily_usd: 0,
-    },
-    last_update: "",
+
+  // Initialize from cache if available
+  const [state, setState] = useState<InventoryState>(() => {
+    if (inventoryCache) return inventoryCache;
+    return {
+      balances: [],
+      total_usd: 0,
+      exchange_statuses: {},
+      exposure: {
+        max_per_trade_usd: 1000,
+        max_daily_usd: 10000,
+        used_daily_usd: 0,
+      },
+      last_update: "",
+      saved_wallet_address: null,
+    };
   });
-  const [loading, setLoading] = useState(true);
+
+  // Only show loading if we have no cached data
+  const [loading, setLoading] = useState(!inventoryCache);
   const [error, setError] = useState<string | null>(null);
   const [recentTxs, setRecentTxs] = useState<RecentTransaction[]>([]);
   const [loadingTxs, setLoadingTxs] = useState(false);
 
   useEffect(() => {
     if (user) {
-      fetchBalances();
+      // Fetch if no cache or cache is stale
+      const now = Date.now();
+      if (!inventoryCache || now - lastFetchTime > CACHE_DURATION_MS) {
+        fetchBalances();
+      }
+      // Set up periodic refresh in background
+      const interval = setInterval(
+        () => fetchBalances(true),
+        CACHE_DURATION_MS
+      );
+      return () => clearInterval(interval);
     } else {
       setLoading(false);
     }
   }, [user]);
 
-  // Fetch recent transactions when wallet is connected
+  // Fetch recent transactions when wallet is connected OR saved
   useEffect(() => {
-    if (wallet.isConnected && wallet.address) {
-      fetchRecentTransactions(wallet.address);
+    const addressToUse = wallet.address || state.saved_wallet_address;
+    if (addressToUse) {
+      fetchRecentTransactions(addressToUse);
     }
-  }, [wallet.isConnected, wallet.address]);
+  }, [wallet.address, state.saved_wallet_address]);
 
   const fetchRecentTransactions = async (address: string) => {
     setLoadingTxs(true);
@@ -115,8 +140,8 @@ export function InventoryPage() {
     setLoadingTxs(false);
   };
 
-  const fetchBalances = async () => {
-    setLoading(true);
+  const fetchBalances = async (background = false) => {
+    if (!background) setLoading(true);
     setError(null);
     try {
       const token = await getAccessToken();
@@ -128,7 +153,7 @@ export function InventoryPage() {
 
       if (res.ok) {
         const data = await res.json();
-        setState({
+        const newState: InventoryState = {
           balances: data.balances || [],
           total_usd: data.total_usd || 0,
           exchange_statuses: data.exchange_statuses || {},
@@ -138,15 +163,20 @@ export function InventoryPage() {
             used_daily_usd: 0,
           },
           last_update: data.last_update || new Date().toISOString(),
-        });
+          saved_wallet_address: data.saved_wallet_address || null,
+        };
+        setState(newState);
+        // Update cache
+        inventoryCache = newState;
+        lastFetchTime = Date.now();
       } else {
         const errData = await res.json();
-        setError(errData.error || "Failed to fetch balances");
+        if (!background) setError(errData.error || "Failed to fetch balances");
       }
     } catch (err: any) {
-      setError(err.message || "Network error");
+      if (!background) setError(err.message || "Network error");
     }
-    setLoading(false);
+    if (!background) setLoading(false);
   };
 
   const venues = ["Wallet", "LBank", "LATOKEN"];
@@ -298,12 +328,17 @@ export function InventoryPage() {
                 {getVenueBalances(venue).length === 0 && (
                   <div className="px-4 py-6 text-center text-sm">
                     {venue === "Wallet" ? (
-                      wallet.isConnected ? (
+                      wallet.isConnected || state.saved_wallet_address ? (
                         <div>
                           <span className="text-emerald-400">✓ Connected</span>
                           <p className="text-xs text-slate-500 mt-1 font-mono">
-                            {wallet.address?.slice(0, 6)}...
-                            {wallet.address?.slice(-4)}
+                            {(
+                              wallet.address || state.saved_wallet_address
+                            )?.slice(0, 6)}
+                            ...
+                            {(
+                              wallet.address || state.saved_wallet_address
+                            )?.slice(-4)}
                           </p>
                         </div>
                       ) : (
@@ -415,13 +450,13 @@ export function InventoryPage() {
                 </div>
               ))}
             </div>
-          ) : wallet.isConnected ? (
+          ) : wallet.isConnected || state.saved_wallet_address ? (
             <div className="text-center text-slate-500 py-4 text-sm">
               No recent transactions found for this wallet
             </div>
           ) : (
             <div className="text-center text-slate-500 py-4 text-sm">
-              Connect your wallet to view transactions
+              Connect or save your wallet to view transactions
             </div>
           )}
         </div>

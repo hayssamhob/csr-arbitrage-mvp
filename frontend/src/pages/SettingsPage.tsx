@@ -319,8 +319,7 @@ export function SettingsPage() {
               )}
             </div>
             <p className="text-xs text-slate-500 mb-3">
-              LBank only requires an API key (no secret needed for read-only
-              access)
+              LBank requires both API key and secret for balance fetching
             </p>
             <div className="grid grid-cols-1 gap-3">
               <input
@@ -334,7 +333,7 @@ export function SettingsPage() {
               />
               <input
                 type="text"
-                placeholder="API Secret (optional)"
+                placeholder="API Secret"
                 value={
                   lbankSecret ||
                   getExchangeStatus("lbank")?.api_secret_masked ||
