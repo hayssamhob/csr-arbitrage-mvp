@@ -38,7 +38,7 @@ interface Opportunity {
 }
 
 interface DashboardData {
-  market_state?: {
+  opportunities?: {
     csr_usdt?: {
       latoken_ticker?: {
         bid: number;
@@ -47,9 +47,15 @@ interface DashboardData {
         volume_24h: number;
         ts: string;
       };
-      uniswap?: {
-        price: number;
-        ts: number;
+      uniswap_quote?: {
+        effective_price_usdt: number;
+        ts: string;
+      };
+      decision?: {
+        edge_after_costs_bps: number;
+        direction: string;
+        would_trade: boolean;
+        reason: string;
       };
     };
     csr25_usdt?: {
@@ -60,9 +66,15 @@ interface DashboardData {
         volume_24h: number;
         ts: string;
       };
-      uniswap?: {
-        price: number;
-        ts: number;
+      uniswap_quote?: {
+        effective_price_usdt: number;
+        ts: string;
+      };
+      decision?: {
+        edge_after_costs_bps: number;
+        direction: string;
+        would_trade: boolean;
+        reason: string;
       };
     };
   };
@@ -111,13 +123,16 @@ export function ArbitragePage() {
         const now = new Date().toISOString();
 
         // CSR/USDT from LATOKEN
-        const csrLatoken = dashboard.market_state?.csr_usdt?.latoken_ticker;
-        const csrDex = dashboard.market_state?.csr_usdt?.uniswap;
+        const csrLatoken = dashboard.opportunities?.csr_usdt?.latoken_ticker;
+        const csrDex = dashboard.opportunities?.csr_usdt?.uniswap_quote;
+        const csrDecision = dashboard.opportunities?.csr_usdt?.decision;
         if (csrLatoken && csrDex) {
           const cexMid = (csrLatoken.bid + csrLatoken.ask) / 2;
-          const dexPrice = csrDex.price;
-          const edgeBps = Math.round(((dexPrice - cexMid) / cexMid) * 10000);
-          const edgeUsd = (edgeBps / 10000) * 500; // Based on $500 trade
+          const dexPrice = csrDex.effective_price_usdt;
+          const edgeBps =
+            csrDecision?.edge_after_costs_bps ??
+            Math.round(((dexPrice - cexMid) / cexMid) * 10000);
+          const edgeUsd = (edgeBps / 10000) * 500;
 
           opportunities.push({
             market: "CSR/USDT",
@@ -130,27 +145,34 @@ export function ArbitragePage() {
             dex_quote_size: 500,
             dex_price_impact: 0.5,
             dex_gas_usd: 0.01,
-            dex_ts: now,
+            dex_ts: csrDex.ts,
             edge_bps: edgeBps,
             edge_usd: edgeUsd,
             max_safe_size: 500,
-            direction: edgeBps > 0 ? "BUY_CEX_SELL_DEX" : "BUY_DEX_SELL_CEX",
-            is_actionable: Math.abs(edgeBps) > 50,
+            direction:
+              csrDecision?.direction === "buy_dex_sell_cex"
+                ? "BUY_DEX_SELL_CEX"
+                : "BUY_CEX_SELL_DEX",
+            is_actionable: csrDecision?.would_trade ?? Math.abs(edgeBps) > 50,
             reason:
-              Math.abs(edgeBps) > 50
+              csrDecision?.reason ??
+              (Math.abs(edgeBps) > 50
                 ? "Edge exceeds threshold"
-                : "Edge below threshold",
+                : "Edge below threshold"),
           });
         }
 
         // CSR25/USDT from LBank
-        const csr25Lbank = dashboard.market_state?.csr25_usdt?.lbank_ticker;
-        const csr25Dex = dashboard.market_state?.csr25_usdt?.uniswap;
+        const csr25Lbank = dashboard.opportunities?.csr25_usdt?.lbank_ticker;
+        const csr25Dex = dashboard.opportunities?.csr25_usdt?.uniswap_quote;
+        const csr25Decision = dashboard.opportunities?.csr25_usdt?.decision;
         if (csr25Lbank && csr25Dex) {
           const cexMid = (csr25Lbank.bid + csr25Lbank.ask) / 2;
-          const dexPrice = csr25Dex.price;
-          const edgeBps = Math.round(((dexPrice - cexMid) / cexMid) * 10000);
-          const edgeUsd = (edgeBps / 10000) * 1000; // Based on $1000 trade
+          const dexPrice = csr25Dex.effective_price_usdt;
+          const edgeBps =
+            csr25Decision?.edge_after_costs_bps ??
+            Math.round(((dexPrice - cexMid) / cexMid) * 10000);
+          const edgeUsd = (edgeBps / 10000) * 1000;
 
           opportunities.push({
             market: "CSR25/USDT",
@@ -163,16 +185,20 @@ export function ArbitragePage() {
             dex_quote_size: 1000,
             dex_price_impact: 0.3,
             dex_gas_usd: 0.01,
-            dex_ts: now,
+            dex_ts: csr25Dex.ts,
             edge_bps: edgeBps,
             edge_usd: edgeUsd,
             max_safe_size: 1000,
-            direction: edgeBps > 0 ? "BUY_CEX_SELL_DEX" : "BUY_DEX_SELL_CEX",
-            is_actionable: Math.abs(edgeBps) > 50,
+            direction:
+              csr25Decision?.direction === "buy_dex_sell_cex"
+                ? "BUY_DEX_SELL_CEX"
+                : "BUY_CEX_SELL_DEX",
+            is_actionable: csr25Decision?.would_trade ?? Math.abs(edgeBps) > 50,
             reason:
-              Math.abs(edgeBps) > 50
+              csr25Decision?.reason ??
+              (Math.abs(edgeBps) > 50
                 ? "Edge exceeds threshold"
-                : "Edge below threshold",
+                : "Edge below threshold"),
           });
         }
 
@@ -183,7 +209,7 @@ export function ArbitragePage() {
           if (csrLatoken && csrDex) {
             const cexMid = (csrLatoken.bid + csrLatoken.ask) / 2;
             const spreadBps = Math.round(
-              ((csrDex.price - cexMid) / cexMid) * 10000
+              ((csrDex.effective_price_usdt - cexMid) / cexMid) * 10000
             );
             newHistory.csr_usdt = [
               ...prev.priceHistory.csr_usdt.slice(-19),
@@ -194,7 +220,7 @@ export function ArbitragePage() {
           if (csr25Lbank && csr25Dex) {
             const cexMid = (csr25Lbank.bid + csr25Lbank.ask) / 2;
             const spreadBps = Math.round(
-              ((csr25Dex.price - cexMid) / cexMid) * 10000
+              ((csr25Dex.effective_price_usdt - cexMid) / cexMid) * 10000
             );
             newHistory.csr25_usdt = [
               ...prev.priceHistory.csr25_usdt.slice(-19),
@@ -482,15 +508,16 @@ export function ArbitragePage() {
             <AdvancedMetricsCard
               token="CSR"
               cexPrice={
-                state.dashboard?.market_state?.csr_usdt?.latoken_ticker
-                  ? (state.dashboard.market_state.csr_usdt.latoken_ticker.bid +
-                      state.dashboard.market_state.csr_usdt.latoken_ticker
+                state.dashboard?.opportunities?.csr_usdt?.latoken_ticker
+                  ? (state.dashboard.opportunities.csr_usdt.latoken_ticker.bid +
+                      state.dashboard.opportunities.csr_usdt.latoken_ticker
                         .ask) /
                     2
                   : 0
               }
               dexPrice={
-                state.dashboard?.market_state?.csr_usdt?.uniswap?.price || 0
+                state.dashboard?.opportunities?.csr_usdt?.uniswap_quote
+                  ?.effective_price_usdt || 0
               }
               deviationHistory={state.priceHistory.csr_usdt.map((p) => ({
                 timestamp: new Date(p.ts).getTime(),
@@ -501,15 +528,16 @@ export function ArbitragePage() {
             <AdvancedMetricsCard
               token="CSR25"
               cexPrice={
-                state.dashboard?.market_state?.csr25_usdt?.lbank_ticker
-                  ? (state.dashboard.market_state.csr25_usdt.lbank_ticker.bid +
-                      state.dashboard.market_state.csr25_usdt.lbank_ticker
+                state.dashboard?.opportunities?.csr25_usdt?.lbank_ticker
+                  ? (state.dashboard.opportunities.csr25_usdt.lbank_ticker.bid +
+                      state.dashboard.opportunities.csr25_usdt.lbank_ticker
                         .ask) /
                     2
                   : 0
               }
               dexPrice={
-                state.dashboard?.market_state?.csr25_usdt?.uniswap?.price || 0
+                state.dashboard?.opportunities?.csr25_usdt?.uniswap_quote
+                  ?.effective_price_usdt || 0
               }
               deviationHistory={state.priceHistory.csr25_usdt.map((p) => ({
                 timestamp: new Date(p.ts).getTime(),
