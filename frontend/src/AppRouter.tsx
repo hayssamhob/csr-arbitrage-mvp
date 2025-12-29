@@ -3,7 +3,7 @@
  * Mode controls are now on each page's header (like ArbitragePage style)
  */
 
-import { Navigate, NavLink, Route, Routes } from "react-router-dom";
+import { Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import App from "./App";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -21,8 +21,11 @@ function Navigation() {
   return (
     <nav className="bg-slate-950/60 backdrop-blur-xl border-b border-slate-800/50 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 flex items-center justify-between h-24">
-        {/* Left: Logo + Title */}
-        <div className="flex items-center gap-5">
+        {/* Left: Logo + Title - Clickable to go home */}
+        <Link
+          to="/alignment"
+          className="flex items-center gap-5 cursor-pointer"
+        >
           <div className="relative group">
             <div className="absolute -inset-1.5 bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-600 rounded-2xl blur-md opacity-20 group-hover:opacity-40 transition duration-500"></div>
             <img
@@ -47,7 +50,7 @@ function Navigation() {
               </span>
             </div>
           </div>
-        </div>
+        </Link>
 
         {/* Center: Navigation Tabs */}
         <div className="hidden lg:flex items-center gap-1.5 bg-slate-900/50 p-1.5 rounded-2xl border border-slate-800/50 shadow-inner">
