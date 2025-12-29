@@ -162,19 +162,21 @@ export function GlobalStatusBar({
             </span>
           </div>
 
-          {/* Execution Controls */}
-          <div className="flex items-center gap-3">
+          {/* Unified Execution Controls */}
+          <div className="flex items-center gap-2 bg-slate-800/50 rounded-lg p-1 border border-slate-700">
             {/* Mode Selector */}
-            <div
-              className="flex items-center gap-1 bg-slate-800 rounded-lg p-0.5"
-              title="OFF: No trades executed. MANUAL: Review and approve each trade before execution."
-            >
+            <div className="flex items-center gap-1">
               {(["OFF", "MANUAL"] as const).map((mode) => (
                 <button
                   key={mode}
                   onClick={() => onModeChange(mode)}
                   disabled={killSwitchActive && mode !== "OFF"}
-                  className={`px-3 py-1 text-xs font-medium rounded transition-all ${
+                  title={
+                    mode === "OFF"
+                      ? "Monitoring only - no trades will be executed"
+                      : "Manual mode - review and approve each trade before execution"
+                  }
+                  className={`px-3 py-1.5 text-xs font-medium rounded transition-all ${
                     executionMode === mode
                       ? mode === "OFF"
                         ? "bg-slate-600 text-white"
@@ -191,15 +193,18 @@ export function GlobalStatusBar({
               ))}
             </div>
 
-            {/* Kill Switch */}
+            {/* Separator */}
+            <div className="w-px h-5 bg-slate-600" />
+
+            {/* Kill Switch - Emergency Stop */}
             <button
               onClick={onKillSwitchToggle}
               title={
                 killSwitchActive
-                  ? "Kill switch is active - all trading halted. Click to resume."
-                  : "Emergency stop button - click to halt all trading immediately."
+                  ? "⚠️ EMERGENCY STOP ACTIVE - All trading halted. Click to resume normal operation."
+                  : "🛡️ System is SAFE. Click to activate emergency stop and halt all trading immediately."
               }
-              className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+              className={`px-3 py-1.5 text-xs font-bold rounded transition-all flex items-center gap-1 ${
                 killSwitchActive
                   ? "bg-red-600 text-white animate-pulse"
                   : "bg-emerald-600/80 text-white hover:bg-emerald-600"

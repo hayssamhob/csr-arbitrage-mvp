@@ -168,7 +168,7 @@ export function RecentSwaps({ token }: RecentSwapsProps) {
       {data?.token_address && (
         <div className="px-4 py-3 border-t border-slate-700/50 text-center">
           <a
-            href={`https://etherscan.io/token/${data.token_address}?a=0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad`}
+            href={`https://etherscan.io/token/${data.token_address}?a=0x000000000004444c5dc75cb358380d2e3de08a90`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm text-blue-400 hover:text-blue-300 hover:underline"
