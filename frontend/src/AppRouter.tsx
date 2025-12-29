@@ -5,13 +5,17 @@
 
 import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 import App from "./App";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { useWallet } from "./hooks/useWallet";
 import { ArbitragePage } from "./pages/ArbitragePage";
 import { InventoryPage } from "./pages/InventoryPage";
+import { LoginPage } from "./pages/LoginPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 function Navigation() {
   const wallet = useWallet();
+  const { user, loading, signOut } = useAuth();
 
   return (
     <nav className="bg-slate-900/95 border-b border-slate-700/50">
@@ -80,8 +84,33 @@ function Navigation() {
           </NavLink>
         </div>
 
-        {/* Right: Wallet Only (mode controls moved to page headers) */}
-        <div className="flex items-center gap-2">
+        {/* Right: Auth + Wallet */}
+        <div className="flex items-center gap-3">
+          {/* Auth Status */}
+          {loading ? (
+            <span className="text-xs text-slate-500">...</span>
+          ) : user ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400 hidden sm:block">
+                {user.email}
+              </span>
+              <button
+                onClick={signOut}
+                className="px-2 py-1 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors"
+              >
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <NavLink
+              to="/login"
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium text-xs transition-colors"
+            >
+              Sign in
+            </NavLink>
+          )}
+
+          {/* Wallet */}
           {wallet.isConnected ? (
             <div className="flex items-center gap-1.5 bg-slate-800 rounded-lg px-2 py-1 border border-slate-700">
               <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
@@ -110,19 +139,47 @@ function Navigation() {
   );
 }
 
-export default function AppRouter() {
+function AppContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-900">
       <Navigation />
       <Routes>
+        {/* Public routes */}
         <Route path="/alignment" element={<App />} />
         <Route path="/arbitrage" element={<ArbitragePage />} />
-        <Route path="/inventory" element={<InventoryPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/login" element={<LoginPage />} />
+
+        {/* Protected routes - require authentication */}
+        <Route
+          path="/inventory"
+          element={
+            <ProtectedRoute>
+              <InventoryPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Redirects */}
         <Route path="/" element={<Navigate to="/alignment" replace />} />
         <Route path="/defense" element={<Navigate to="/alignment" replace />} />
         <Route path="*" element={<Navigate to="/alignment" replace />} />
       </Routes>
     </div>
+  );
+}
+
+export default function AppRouter() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }

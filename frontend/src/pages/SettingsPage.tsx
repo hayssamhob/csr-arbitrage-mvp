@@ -1,51 +1,268 @@
 /**
- * SettingsPage - Configuration
+ * SettingsPage - User Configuration with Supabase Backend
+ * Stores API keys (encrypted), wallets, and risk limits per user
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
 
-interface Settings {
-  limits: {
-    max_order_usdt: number;
-    max_daily_volume_usdt: number;
-    min_edge_bps: number;
-    max_slippage_bps: number;
-  };
-  defense: {
-    band_bps: number;
-    max_impact_pct: number;
-  };
-  api_status: {
-    lbank_configured: boolean;
-    latoken_configured: boolean;
-  };
+const API_URL =
+  import.meta.env.VITE_API_URL || "https://trade.depollutenow.com";
+
+interface RiskLimits {
+  max_order_usdt: number;
+  daily_limit_usdt: number;
+  min_edge_bps: number;
+  max_slippage_bps: number;
+  kill_switch: boolean;
+}
+
+interface ExchangeStatus {
+  venue: string;
+  connected: boolean;
+  last_test_ok: boolean | null;
+  last_test_error: string | null;
+  last_test_at: string | null;
+}
+
+interface Wallet {
+  id: string;
+  chain: string;
+  address: string;
+  label: string | null;
 }
 
 export function SettingsPage() {
-  const [settings, setSettings] = useState<Settings>({
-    limits: {
-      max_order_usdt: 1000,
-      max_daily_volume_usdt: 10000,
-      min_edge_bps: 50,
-      max_slippage_bps: 100,
-    },
-    defense: {
-      band_bps: 200,
-      max_impact_pct: 1.0,
-    },
-    api_status: {
-      lbank_configured: false,
-      latoken_configured: false,
-    },
+  const { user, getAccessToken } = useAuth();
+
+  // Risk Limits
+  const [riskLimits, setRiskLimits] = useState<RiskLimits>({
+    max_order_usdt: 1000,
+    daily_limit_usdt: 10000,
+    min_edge_bps: 50,
+    max_slippage_bps: 100,
+    kill_switch: true,
   });
+  const [savingLimits, setSavingLimits] = useState(false);
 
-  const [saving, setSaving] = useState(false);
+  // Exchange Credentials
+  const [exchanges, setExchanges] = useState<ExchangeStatus[]>([]);
+  const [lbankKey, setLbankKey] = useState("");
+  const [lbankSecret, setLbankSecret] = useState("");
+  const [latokenKey, setLatokenKey] = useState("");
+  const [latokenSecret, setLatokenSecret] = useState("");
+  const [savingExchange, setSavingExchange] = useState<string | null>(null);
+  const [testingExchange, setTestingExchange] = useState<string | null>(null);
 
-  const handleSave = async () => {
-    setSaving(true);
-    await new Promise((r) => setTimeout(r, 500));
-    alert("Settings saved (mock)");
-    setSaving(false);
+  // Wallets
+  const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [newWalletAddress, setNewWalletAddress] = useState("");
+  const [newWalletLabel, setNewWalletLabel] = useState("");
+  const [savingWallet, setSavingWallet] = useState(false);
+
+  // Messages
+  const [message, setMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  // Fetch data on mount
+  useEffect(() => {
+    if (user) {
+      fetchRiskLimits();
+      fetchExchanges();
+      fetchWallets();
+    }
+  }, [user]);
+
+  const authHeaders = async () => {
+    const token = await getAccessToken();
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+  };
+
+  const fetchRiskLimits = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/me/risk-limits`, {
+        headers: await authHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRiskLimits(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch risk limits:", err);
+    }
+  };
+
+  const fetchExchanges = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/me/exchanges`, {
+        headers: await authHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setExchanges(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch exchanges:", err);
+    }
+  };
+
+  const fetchWallets = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/me/wallets`, {
+        headers: await authHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWallets(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch wallets:", err);
+    }
+  };
+
+  const saveRiskLimits = async () => {
+    setSavingLimits(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`${API_URL}/api/me/risk-limits`, {
+        method: "PUT",
+        headers: await authHeaders(),
+        body: JSON.stringify(riskLimits),
+      });
+      if (res.ok) {
+        setMessage({ type: "success", text: "Risk limits saved!" });
+      } else {
+        const err = await res.json();
+        setMessage({ type: "error", text: err.error || "Failed to save" });
+      }
+    } catch (err) {
+      setMessage({ type: "error", text: "Network error" });
+    }
+    setSavingLimits(false);
+  };
+
+  const saveExchangeCredentials = async (venue: "lbank" | "latoken") => {
+    setSavingExchange(venue);
+    setMessage(null);
+    const apiKey = venue === "lbank" ? lbankKey : latokenKey;
+    const apiSecret = venue === "lbank" ? lbankSecret : latokenSecret;
+
+    if (!apiKey || !apiSecret) {
+      setMessage({ type: "error", text: "API Key and Secret are required" });
+      setSavingExchange(null);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/api/me/exchanges/${venue}`, {
+        method: "POST",
+        headers: await authHeaders(),
+        body: JSON.stringify({ api_key: apiKey, api_secret: apiSecret }),
+      });
+      if (res.ok) {
+        setMessage({
+          type: "success",
+          text: `${venue.toUpperCase()} credentials saved!`,
+        });
+        // Clear inputs after save
+        if (venue === "lbank") {
+          setLbankKey("");
+          setLbankSecret("");
+        } else {
+          setLatokenKey("");
+          setLatokenSecret("");
+        }
+        fetchExchanges();
+      } else {
+        const err = await res.json();
+        setMessage({ type: "error", text: err.error || "Failed to save" });
+      }
+    } catch (err) {
+      setMessage({ type: "error", text: "Network error" });
+    }
+    setSavingExchange(null);
+  };
+
+  const testExchangeConnection = async (venue: string) => {
+    setTestingExchange(venue);
+    setMessage(null);
+    try {
+      const res = await fetch(`${API_URL}/api/me/exchanges/${venue}/test`, {
+        method: "POST",
+        headers: await authHeaders(),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setMessage({
+          type: "success",
+          text: `${venue.toUpperCase()} connection test passed!`,
+        });
+      } else {
+        setMessage({
+          type: "error",
+          text: data.message || data.error || "Test failed",
+        });
+      }
+      fetchExchanges();
+    } catch (err) {
+      setMessage({ type: "error", text: "Network error" });
+    }
+    setTestingExchange(null);
+  };
+
+  const addWallet = async () => {
+    if (!newWalletAddress) return;
+    setSavingWallet(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`${API_URL}/api/me/wallets`, {
+        method: "POST",
+        headers: await authHeaders(),
+        body: JSON.stringify({
+          address: newWalletAddress,
+          label: newWalletLabel || null,
+          chain: "ethereum",
+        }),
+      });
+      if (res.ok) {
+        setMessage({ type: "success", text: "Wallet added!" });
+        setNewWalletAddress("");
+        setNewWalletLabel("");
+        fetchWallets();
+      } else {
+        const err = await res.json();
+        setMessage({
+          type: "error",
+          text: err.error || "Failed to add wallet",
+        });
+      }
+    } catch (err) {
+      setMessage({ type: "error", text: "Network error" });
+    }
+    setSavingWallet(false);
+  };
+
+  const removeWallet = async (id: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/me/wallets/${id}`, {
+        method: "DELETE",
+        headers: await authHeaders(),
+      });
+      if (res.ok) {
+        fetchWallets();
+      }
+    } catch (err) {
+      console.error("Failed to remove wallet:", err);
+    }
+  };
+
+  const getExchangeStatus = (venue: string): ExchangeStatus | undefined => {
+    return exchanges.find((e) => e.venue === venue);
   };
 
   return (
@@ -53,108 +270,310 @@ export function SettingsPage() {
       <div className="bg-slate-900 border-b border-slate-700 px-4 py-3">
         <div className="max-w-7xl mx-auto">
           <h1 className="text-xl font-bold">⚙️ Settings</h1>
-          <p className="text-slate-400 text-sm">Configure trading parameters</p>
+          <p className="text-slate-400 text-sm">
+            Signed in as <span className="text-emerald-400">{user?.email}</span>
+          </p>
         </div>
       </div>
 
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+        {/* Message */}
+        {message && (
+          <div
+            className={`p-4 rounded-xl text-sm ${
+              message.type === "success"
+                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                : "bg-red-500/20 text-red-300 border border-red-500/30"
+            }`}
+          >
+            {message.text}
+          </div>
+        )}
+
+        {/* Exchange Credentials */}
+        <div className="bg-slate-900/50 rounded-xl border border-slate-700 p-4">
+          <h3 className="font-semibold mb-4">🔐 Exchange API Keys</h3>
+          <p className="text-xs text-slate-500 mb-4">
+            Keys are encrypted before storage. Only you can access them.
+          </p>
+
+          {/* LBank */}
+          <div className="mb-6 p-4 bg-slate-800/50 rounded-lg">
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-medium">LBank</span>
+              {getExchangeStatus("lbank") ? (
+                <span
+                  className={
+                    getExchangeStatus("lbank")?.last_test_ok
+                      ? "text-emerald-400 text-sm"
+                      : "text-amber-400 text-sm"
+                  }
+                >
+                  {getExchangeStatus("lbank")?.last_test_ok
+                    ? "✓ Connected"
+                    : "⚠ Configured"}
+                </span>
+              ) : (
+                <span className="text-slate-500 text-sm">Not configured</span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 gap-3">
+              <input
+                type="text"
+                placeholder="API Key"
+                value={lbankKey}
+                onChange={(e) => setLbankKey(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm"
+              />
+              <input
+                type="password"
+                placeholder="API Secret"
+                value={lbankSecret}
+                onChange={(e) => setLbankSecret(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => saveExchangeCredentials("lbank")}
+                  disabled={savingExchange === "lbank"}
+                  className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded"
+                >
+                  {savingExchange === "lbank" ? "Saving..." : "Save LBank Keys"}
+                </button>
+                {getExchangeStatus("lbank") && (
+                  <button
+                    onClick={() => testExchangeConnection("lbank")}
+                    disabled={testingExchange === "lbank"}
+                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white text-sm rounded"
+                  >
+                    {testingExchange === "lbank" ? "Testing..." : "Test"}
+                  </button>
+                )}
+              </div>
+              {getExchangeStatus("lbank")?.last_test_error && (
+                <p className="text-xs text-red-400">
+                  Last error: {getExchangeStatus("lbank")?.last_test_error}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* LATOKEN */}
+          <div className="p-4 bg-slate-800/50 rounded-lg">
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-medium">LATOKEN</span>
+              {getExchangeStatus("latoken") ? (
+                <span
+                  className={
+                    getExchangeStatus("latoken")?.last_test_ok
+                      ? "text-emerald-400 text-sm"
+                      : "text-amber-400 text-sm"
+                  }
+                >
+                  {getExchangeStatus("latoken")?.last_test_ok
+                    ? "✓ Connected"
+                    : "⚠ Configured"}
+                </span>
+              ) : (
+                <span className="text-slate-500 text-sm">Not configured</span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 gap-3">
+              <input
+                type="text"
+                placeholder="API Key"
+                value={latokenKey}
+                onChange={(e) => setLatokenKey(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm"
+              />
+              <input
+                type="password"
+                placeholder="API Secret"
+                value={latokenSecret}
+                onChange={(e) => setLatokenSecret(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => saveExchangeCredentials("latoken")}
+                  disabled={savingExchange === "latoken"}
+                  className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded"
+                >
+                  {savingExchange === "latoken"
+                    ? "Saving..."
+                    : "Save LATOKEN Keys"}
+                </button>
+                {getExchangeStatus("latoken") && (
+                  <button
+                    onClick={() => testExchangeConnection("latoken")}
+                    disabled={testingExchange === "latoken"}
+                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white text-sm rounded"
+                  >
+                    {testingExchange === "latoken" ? "Testing..." : "Test"}
+                  </button>
+                )}
+              </div>
+              {getExchangeStatus("latoken")?.last_test_error && (
+                <p className="text-xs text-red-400">
+                  Last error: {getExchangeStatus("latoken")?.last_test_error}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Wallets */}
+        <div className="bg-slate-900/50 rounded-xl border border-slate-700 p-4">
+          <h3 className="font-semibold mb-4">🔐 Wallet Addresses</h3>
+
+          {/* Existing wallets */}
+          {wallets.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {wallets.map((w) => (
+                <div
+                  key={w.id}
+                  className="flex items-center justify-between p-3 bg-slate-800/50 rounded"
+                >
+                  <div>
+                    <div className="font-mono text-sm">
+                      {w.address.slice(0, 6)}...{w.address.slice(-4)}
+                    </div>
+                    {w.label && (
+                      <div className="text-xs text-slate-500">{w.label}</div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => removeWallet(w.id)}
+                    className="text-red-400 hover:text-red-300 text-sm"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add new wallet */}
+          <div className="grid grid-cols-1 gap-3">
+            <input
+              type="text"
+              placeholder="Ethereum address (0x...)"
+              value={newWalletAddress}
+              onChange={(e) => setNewWalletAddress(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm font-mono"
+            />
+            <input
+              type="text"
+              placeholder="Label (optional)"
+              value={newWalletLabel}
+              onChange={(e) => setNewWalletLabel(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm"
+            />
+            <button
+              onClick={addWallet}
+              disabled={savingWallet || !newWalletAddress}
+              className="py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm rounded"
+            >
+              {savingWallet ? "Adding..." : "Add Wallet"}
+            </button>
+          </div>
+        </div>
+
         {/* Risk Limits */}
         <div className="bg-slate-900/50 rounded-xl border border-slate-700 p-4">
-          <h3 className="font-semibold mb-4">Risk Limits</h3>
+          <h3 className="font-semibold mb-4">⚠️ Risk Limits</h3>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Max Order (USDT)</label>
+              <label className="block text-sm text-slate-400 mb-1">
+                Max Order (USDT)
+              </label>
               <input
                 type="number"
-                value={settings.limits.max_order_usdt}
-                onChange={(e) => setSettings(s => ({...s, limits: {...s.limits, max_order_usdt: +e.target.value}}))}
+                value={riskLimits.max_order_usdt}
+                onChange={(e) =>
+                  setRiskLimits((s) => ({
+                    ...s,
+                    max_order_usdt: +e.target.value,
+                  }))
+                }
                 className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Max Daily (USDT)</label>
+              <label className="block text-sm text-slate-400 mb-1">
+                Daily Limit (USDT)
+              </label>
               <input
                 type="number"
-                value={settings.limits.max_daily_volume_usdt}
-                onChange={(e) => setSettings(s => ({...s, limits: {...s.limits, max_daily_volume_usdt: +e.target.value}}))}
+                value={riskLimits.daily_limit_usdt}
+                onChange={(e) =>
+                  setRiskLimits((s) => ({
+                    ...s,
+                    daily_limit_usdt: +e.target.value,
+                  }))
+                }
                 className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Min Edge (bps)</label>
+              <label className="block text-sm text-slate-400 mb-1">
+                Min Edge (bps)
+              </label>
               <input
                 type="number"
-                value={settings.limits.min_edge_bps}
-                onChange={(e) => setSettings(s => ({...s, limits: {...s.limits, min_edge_bps: +e.target.value}}))}
+                value={riskLimits.min_edge_bps}
+                onChange={(e) =>
+                  setRiskLimits((s) => ({
+                    ...s,
+                    min_edge_bps: +e.target.value,
+                  }))
+                }
                 className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2"
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Max Slippage (bps)</label>
+              <label className="block text-sm text-slate-400 mb-1">
+                Max Slippage (bps)
+              </label>
               <input
                 type="number"
-                value={settings.limits.max_slippage_bps}
-                onChange={(e) => setSettings(s => ({...s, limits: {...s.limits, max_slippage_bps: +e.target.value}}))}
+                value={riskLimits.max_slippage_bps}
+                onChange={(e) =>
+                  setRiskLimits((s) => ({
+                    ...s,
+                    max_slippage_bps: +e.target.value,
+                  }))
+                }
                 className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2"
               />
             </div>
           </div>
-        </div>
 
-        {/* Defense Settings */}
-        <div className="bg-slate-900/50 rounded-xl border border-slate-700 p-4">
-          <h3 className="font-semibold mb-4">Defense Settings</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">Alignment Band (bps)</label>
+          <div className="mt-4 flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer">
               <input
-                type="number"
-                value={settings.defense.band_bps}
-                onChange={(e) => setSettings(s => ({...s, defense: {...s.defense, band_bps: +e.target.value}}))}
-                className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2"
+                type="checkbox"
+                checked={riskLimits.kill_switch}
+                onChange={(e) =>
+                  setRiskLimits((s) => ({
+                    ...s,
+                    kill_switch: e.target.checked,
+                  }))
+                }
+                className="w-4 h-4 rounded"
               />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">Max Impact (%)</label>
-              <input
-                type="number"
-                step="0.1"
-                value={settings.defense.max_impact_pct}
-                onChange={(e) => setSettings(s => ({...s, defense: {...s.defense, max_impact_pct: +e.target.value}}))}
-                className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2"
-              />
-            </div>
+              <span className="text-sm">Kill Switch (halt all trading)</span>
+            </label>
           </div>
-        </div>
 
-        {/* API Status */}
-        <div className="bg-slate-900/50 rounded-xl border border-slate-700 p-4">
-          <h3 className="font-semibold mb-4">API Connections</h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded">
-              <span>LBank API</span>
-              <span className={settings.api_status.lbank_configured ? "text-emerald-400" : "text-red-400"}>
-                {settings.api_status.lbank_configured ? "✓ Configured" : "✗ Not configured"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded">
-              <span>LATOKEN API</span>
-              <span className={settings.api_status.latoken_configured ? "text-emerald-400" : "text-red-400"}>
-                {settings.api_status.latoken_configured ? "✓ Configured" : "✗ Not configured"}
-              </span>
-            </div>
-          </div>
-          <p className="text-xs text-slate-500 mt-3">API keys are stored securely on the server</p>
+          <button
+            onClick={saveRiskLimits}
+            disabled={savingLimits}
+            className="mt-4 w-full py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-500 disabled:opacity-50"
+          >
+            {savingLimits ? "Saving..." : "Save Risk Limits"}
+          </button>
         </div>
-
-        {/* Save Button */}
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="w-full py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-500 disabled:opacity-50"
-        >
-          {saving ? "Saving..." : "Save Settings"}
-        </button>
       </div>
     </div>
   );
