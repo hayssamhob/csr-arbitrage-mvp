@@ -12,6 +12,7 @@
 
 import { useEffect, useState } from "react";
 import { AdvancedMetricsCard } from "../components/AdvancedMetricsCard";
+import { Footer } from "../components/Footer";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
@@ -617,6 +618,7 @@ export function ArbitragePage() {
           </div>
         )}
       </div>
+      <Footer />
     </div>
   );
 }

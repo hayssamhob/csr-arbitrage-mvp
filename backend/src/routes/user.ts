@@ -248,6 +248,17 @@ function maskApiKey(encryptedKey: string): string {
   }
 }
 
+// Helper to mask secret (show only last 4 chars)
+function maskSecret(encryptedSecret: string): string {
+  try {
+    const secret = decrypt(encryptedSecret);
+    if (secret.length <= 4) return '****';
+    return '****' + secret.slice(-4);
+  } catch {
+    return '****';
+  }
+}
+
 // GET /api/me/exchanges - Returns status and masked keys
 router.get(
   "/exchanges",
@@ -274,6 +285,9 @@ router.get(
       venue: cred.venue,
       connected: true,
       api_key_masked: cred.api_key_enc ? maskApiKey(cred.api_key_enc) : null,
+      api_secret_masked: cred.api_secret_enc
+        ? maskSecret(cred.api_secret_enc)
+        : null,
       has_secret: !!cred.api_secret_enc,
       last_test_ok: cred.last_test_ok,
       last_test_error: cred.last_test_error,
@@ -518,10 +532,11 @@ async function fetchLatokenBalances(
   const method = "GET";
   const path = "/v2/auth/account";
 
-  // Create signature for LATOKEN API
+  // Create signature for LATOKEN API v2
+  // Format: HMAC-SHA512 of (timestamp + method + path)
   const message = timestamp + method + path;
   const signature = crypto
-    .createHmac("sha256", apiSecret)
+    .createHmac("sha512", apiSecret)
     .update(message)
     .digest("hex");
 
@@ -531,7 +546,7 @@ async function fetchLatokenBalances(
       headers: {
         "X-LA-APIKEY": apiKey,
         "X-LA-SIGNATURE": signature,
-        "X-LA-DIGEST": "HMAC-SHA256",
+        "X-LA-DIGEST": "HMAC-SHA512",
         "X-LA-SIGTIME": timestamp,
       },
     });

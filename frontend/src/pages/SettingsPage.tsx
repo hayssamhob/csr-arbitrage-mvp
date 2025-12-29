@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { Footer } from "../components/Footer";
 import { useAuth } from "../contexts/AuthContext";
 
 const API_URL =
@@ -21,6 +22,7 @@ interface ExchangeStatus {
   venue: string;
   connected: boolean;
   api_key_masked: string | null;
+  api_secret_masked: string | null;
   has_secret: boolean;
   last_test_ok: boolean | null;
   last_test_error: string | null;
@@ -310,28 +312,11 @@ export function SettingsPage() {
           <div className="mb-6 p-4 bg-slate-800/50 rounded-lg">
             <div className="flex items-center justify-between mb-3">
               <span className="font-medium">LBank</span>
-              <div className="flex items-center gap-2">
-                {getExchangeStatus("lbank")?.api_key_masked && (
-                  <span className="text-xs font-mono text-slate-400 bg-slate-700/50 px-2 py-1 rounded">
-                    🔑 {getExchangeStatus("lbank")?.api_key_masked}
-                  </span>
-                )}
-                {getExchangeStatus("lbank") ? (
-                  <span
-                    className={
-                      getExchangeStatus("lbank")?.last_test_ok
-                        ? "text-emerald-400 text-sm"
-                        : "text-amber-400 text-sm"
-                    }
-                  >
-                    {getExchangeStatus("lbank")?.last_test_ok
-                      ? "✓ Connected"
-                      : "⚠ Configured"}
-                  </span>
-                ) : (
-                  <span className="text-slate-500 text-sm">Not configured</span>
-                )}
-              </div>
+              {getExchangeStatus("lbank") ? (
+                <span className="text-emerald-400 text-sm">✓ Connected</span>
+              ) : (
+                <span className="text-slate-500 text-sm">Not configured</span>
+              )}
             </div>
             <p className="text-xs text-slate-500 mb-3">
               LBank only requires an API key (no secret needed for read-only
@@ -341,16 +326,22 @@ export function SettingsPage() {
               <input
                 type="text"
                 placeholder="API Key"
-                value={lbankKey}
+                value={
+                  lbankKey || getExchangeStatus("lbank")?.api_key_masked || ""
+                }
                 onChange={(e) => setLbankKey(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm"
+                className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm font-mono"
               />
               <input
-                type="password"
+                type="text"
                 placeholder="API Secret (optional)"
-                value={lbankSecret}
+                value={
+                  lbankSecret ||
+                  getExchangeStatus("lbank")?.api_secret_masked ||
+                  ""
+                }
                 onChange={(e) => setLbankSecret(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm"
+                className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm font-mono"
               />
               <div className="flex gap-2">
                 <button
@@ -382,44 +373,34 @@ export function SettingsPage() {
           <div className="p-4 bg-slate-800/50 rounded-lg">
             <div className="flex items-center justify-between mb-3">
               <span className="font-medium">LATOKEN</span>
-              <div className="flex items-center gap-2">
-                {getExchangeStatus("latoken")?.api_key_masked && (
-                  <span className="text-xs font-mono text-slate-400 bg-slate-700/50 px-2 py-1 rounded">
-                    🔑 {getExchangeStatus("latoken")?.api_key_masked}
-                    {getExchangeStatus("latoken")?.has_secret && " + 🔐"}
-                  </span>
-                )}
-                {getExchangeStatus("latoken") ? (
-                  <span
-                    className={
-                      getExchangeStatus("latoken")?.last_test_ok
-                        ? "text-emerald-400 text-sm"
-                        : "text-amber-400 text-sm"
-                    }
-                  >
-                    {getExchangeStatus("latoken")?.last_test_ok
-                      ? "✓ Connected"
-                      : "⚠ Configured"}
-                  </span>
-                ) : (
-                  <span className="text-slate-500 text-sm">Not configured</span>
-                )}
-              </div>
+              {getExchangeStatus("latoken") ? (
+                <span className="text-emerald-400 text-sm">✓ Connected</span>
+              ) : (
+                <span className="text-slate-500 text-sm">Not configured</span>
+              )}
             </div>
             <div className="grid grid-cols-1 gap-3">
               <input
                 type="text"
                 placeholder="API Key"
-                value={latokenKey}
+                value={
+                  latokenKey ||
+                  getExchangeStatus("latoken")?.api_key_masked ||
+                  ""
+                }
                 onChange={(e) => setLatokenKey(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm"
+                className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm font-mono"
               />
               <input
-                type="password"
+                type="text"
                 placeholder="API Secret"
-                value={latokenSecret}
+                value={
+                  latokenSecret ||
+                  getExchangeStatus("latoken")?.api_secret_masked ||
+                  ""
+                }
                 onChange={(e) => setLatokenSecret(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm"
+                className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm font-mono"
               />
               <div className="flex gap-2">
                 <button
@@ -603,6 +584,7 @@ export function SettingsPage() {
           </button>
         </div>
       </div>
+      <Footer />
     </div>
   );
 }
