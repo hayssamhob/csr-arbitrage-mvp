@@ -2,7 +2,7 @@
  * Tooltip - Instant hover tooltip without browser delay
  */
 
-import { ReactNode, useState } from "react";
+import { useState, type ReactNode } from "react";
 
 interface TooltipProps {
   content: string;
