@@ -9,6 +9,7 @@ import express from 'express';
 import * as http from 'http';
 import process from "process";
 import { WebSocket, WebSocketServer } from "ws";
+import userRoutes from "./routes/user";
 
 // Use require for ethers to avoid TS module resolution issues
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -469,6 +470,9 @@ async function fetchServiceData() {
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// User API routes (authenticated)
+app.use('/api/me', userRoutes);
 
 // HTTP Routes
 app.get("/", (req, res) => {
