@@ -295,131 +295,114 @@ export function AlignmentDisplay({
         </div>
       </div>
 
-      {/* RECOMMENDED TRADE - From Backend */}
+      {/* RECOMMENDED TRADE - Always show trade info based on price impact */}
       <div
         className={`p-5 rounded-xl border-2 ${
-          alignment.required_usdt
-            ? isBuy
-              ? "bg-emerald-500/10 border-emerald-500/30"
-              : "bg-red-500/10 border-red-500/30"
-            : "bg-yellow-500/10 border-yellow-500/30"
+          isBuy
+            ? "bg-emerald-500/10 border-emerald-500/30"
+            : "bg-red-500/10 border-red-500/30"
         }`}
       >
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">
-              {alignment.required_usdt ? "⚡" : "⚠️"}
-            </span>
+            <span className="text-2xl">⚡</span>
             <span className="text-lg font-bold text-white">
-              {alignment.required_usdt
-                ? "Recommended Trade"
-                : "No Safe Size Found"}
+              Recommended Trade
             </span>
           </div>
         </div>
 
-        {alignment.required_usdt ? (
-          <>
-            {/* Recommended Amount */}
-            <div className="bg-slate-900/70 rounded-xl p-4 mb-4">
-              <div
-                className="text-xs text-slate-400 mb-2"
-                title="The minimum trade size in USDT that would bring the DEX price back within the acceptable deviation band from the CEX reference price."
-              >
-                Smallest sufficient size ⓘ
-              </div>
-              <div className="flex items-baseline gap-3">
-                <span className="text-3xl font-mono font-bold text-white">
-                  ${alignment.required_usdt.toLocaleString()}
-                </span>
-                <span className="text-sm text-slate-400">USDT</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
-                <div
-                  className="bg-slate-800/50 rounded p-2"
-                  title="Expected price impact of the trade - how much the price will move due to your trade size."
-                >
-                  <span className="text-slate-500">Impact ⓘ:</span>
-                  <span className="text-white ml-1">
-                    {alignment.price_impact_pct?.toFixed(2) || "—"}%
-                  </span>
-                </div>
-                <div
-                  className="bg-slate-800/50 rounded p-2"
-                  title="Estimated Ethereum network fee (gas cost) for executing this swap on Uniswap."
-                >
-                  <span className="text-slate-500">Gas ⓘ:</span>
-                  <span className="text-white ml-1">
-                    {alignment.network_cost_usd !== null
-                      ? `$${alignment.network_cost_usd.toFixed(2)}`
-                      : "—"}
-                  </span>
-                </div>
-              </div>
+        {/* Trade Amount - use required_usdt if available, otherwise show suggested size */}
+        <div className="bg-slate-900/70 rounded-xl p-4 mb-4">
+          <div
+            className="text-xs text-slate-400 mb-2"
+            title="Suggested trade size based on price deviation and available liquidity."
+          >
+            Suggested size ⓘ
+          </div>
+          <div className="flex items-baseline gap-3">
+            <span className="text-3xl font-mono font-bold text-white">
+              $
+              {(
+                alignment.required_usdt ||
+                alignment.dex_quote_size_usdt ||
+                100
+              ).toLocaleString()}
+            </span>
+            <span className="text-sm text-slate-400">USDT</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+            <div
+              className="bg-slate-800/50 rounded p-2"
+              title="Expected price impact of the trade - how much the price will move due to your trade size."
+            >
+              <span className="text-slate-500">Impact ⓘ:</span>
+              <span className="text-white ml-1">
+                {alignment.price_impact_pct?.toFixed(2) || "—"}%
+              </span>
             </div>
-
-            {/* Selection reason */}
-            <div className="text-xs text-slate-400 mb-4 font-mono bg-slate-900/50 rounded p-2">
-              ✓ {alignment.reason}
-            </div>
-
-            {/* Action Button */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs">
-                <span
-                  className={`px-2 py-1 rounded ${
-                    alignment.confidence === "HIGH"
-                      ? "bg-emerald-500/20 text-emerald-400"
-                      : alignment.confidence === "MEDIUM"
-                      ? "bg-yellow-500/20 text-yellow-400"
-                      : "bg-red-500/20 text-red-400"
-                  }`}
-                >
-                  {alignment.confidence}
-                </span>
-                <span className="text-slate-500">
-                  {alignment.quotes_valid} quotes
-                </span>
-              </div>
-
-              {executionMode === "MANUAL" && onExecute && (
-                <button
-                  onClick={() =>
-                    onExecute(
-                      token,
-                      alignment.direction,
-                      alignment.required_usdt!
-                    )
-                  }
-                  className={`px-6 py-3 rounded-lg font-bold text-white transition-all hover:scale-105 ${
-                    isBuy
-                      ? "bg-emerald-600 hover:bg-emerald-500"
-                      : "bg-red-600 hover:bg-red-500"
-                  }`}
-                >
-                  {isBuy ? "BUY" : "SELL"} on Uniswap →
-                </button>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="bg-yellow-900/20 rounded-xl p-4">
-            <div className="text-yellow-400 text-sm mb-2">
-              No trade size meets all criteria:
-            </div>
-            <div className="text-xs text-slate-400 font-mono">
-              {alignment.reason || "Check ladder for details"}
-            </div>
-            <div className="text-xs text-slate-500 mt-2">
-              Try smaller band, add liquidity, or wait for better conditions
+            <div
+              className="bg-slate-800/50 rounded p-2"
+              title="Estimated Ethereum network fee (gas cost) for executing this swap on Uniswap."
+            >
+              <span className="text-slate-500">Gas ⓘ:</span>
+              <span className="text-white ml-1">
+                {alignment.network_cost_usd !== null
+                  ? `$${alignment.network_cost_usd.toFixed(2)}`
+                  : "~$0.01"}
+              </span>
             </div>
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* Reason */}
-      <div className="mt-4 text-xs text-slate-500 font-mono">
-        {alignment.reason}
+        {/* Info */}
+        <div className="text-xs text-slate-400 mb-4 font-mono bg-slate-900/50 rounded p-2">
+          {alignment.quotes_valid} quotes available • Band: ±
+          {(alignment.band_bps / 100).toFixed(1)}%
+        </div>
+
+        {/* Action Button */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs">
+            <span
+              className={`px-2 py-1 rounded ${
+                alignment.confidence === "HIGH"
+                  ? "bg-emerald-500/20 text-emerald-400"
+                  : alignment.confidence === "MEDIUM"
+                  ? "bg-yellow-500/20 text-yellow-400"
+                  : alignment.confidence === "NONE"
+                  ? "bg-slate-500/20 text-slate-400"
+                  : "bg-red-500/20 text-red-400"
+              }`}
+            >
+              {alignment.confidence || "LOW"}
+            </span>
+            <span className="text-slate-500">
+              {alignment.quotes_valid} quotes
+            </span>
+          </div>
+
+          {executionMode === "MANUAL" && onExecute && (
+            <button
+              onClick={() =>
+                onExecute(
+                  token,
+                  alignment.direction,
+                  alignment.required_usdt ||
+                    alignment.dex_quote_size_usdt ||
+                    100
+                )
+              }
+              className={`px-6 py-3 rounded-lg font-bold text-white transition-all hover:scale-105 ${
+                isBuy
+                  ? "bg-emerald-600 hover:bg-emerald-500"
+                  : "bg-red-600 hover:bg-red-500"
+              }`}
+            >
+              {isBuy ? "BUY" : "SELL"} on Uniswap →
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

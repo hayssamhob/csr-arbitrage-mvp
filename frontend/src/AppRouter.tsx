@@ -1,8 +1,8 @@
 /**
  * AppRouter - Handles routing between pages with unified navbar
+ * Mode controls are now on each page's header (like ArbitragePage style)
  */
 
-import { useState } from "react";
 import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 import App from "./App";
 import { useWallet } from "./hooks/useWallet";
@@ -10,14 +10,7 @@ import { ArbitragePage } from "./pages/ArbitragePage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
-type ExecutionMode = "OFF" | "MANUAL" | "AUTO";
-
-interface NavigationProps {
-  executionMode: ExecutionMode;
-  onModeChange: (mode: ExecutionMode) => void;
-}
-
-function Navigation({ executionMode, onModeChange }: NavigationProps) {
+function Navigation() {
   const wallet = useWallet();
 
   return (
@@ -47,7 +40,7 @@ function Navigation({ executionMode, onModeChange }: NavigationProps) {
               }`
             }
           >
-            <span className="hidden sm:inline">⚖️ </span>Alignment
+            <span className="hidden sm:inline">⚡ </span>Alignment
           </NavLink>
           <NavLink
             to="/arbitrage"
@@ -87,30 +80,8 @@ function Navigation({ executionMode, onModeChange }: NavigationProps) {
           </NavLink>
         </div>
 
-        {/* Right: Mode Controls + Wallet */}
+        {/* Right: Wallet Only (mode controls moved to page headers) */}
         <div className="flex items-center gap-2">
-          {/* Execution Mode */}
-          <div className="hidden sm:flex bg-slate-800 rounded-lg p-0.5">
-            {(["OFF", "MANUAL", "AUTO"] as ExecutionMode[]).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => onModeChange(mode)}
-                className={`px-2 py-1 text-xs font-medium rounded transition-all ${
-                  executionMode === mode
-                    ? mode === "OFF"
-                      ? "bg-slate-600 text-white"
-                      : mode === "MANUAL"
-                      ? "bg-amber-600 text-white"
-                      : "bg-emerald-600 text-white"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
-
-          {/* Wallet Button */}
           {wallet.isConnected ? (
             <div className="flex items-center gap-1.5 bg-slate-800 rounded-lg px-2 py-1 border border-slate-700">
               <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
@@ -140,19 +111,11 @@ function Navigation({ executionMode, onModeChange }: NavigationProps) {
 }
 
 export default function AppRouter() {
-  const [executionMode, setExecutionMode] = useState<ExecutionMode>("MANUAL");
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-900">
-      <Navigation
-        executionMode={executionMode}
-        onModeChange={setExecutionMode}
-      />
+      <Navigation />
       <Routes>
-        <Route
-          path="/alignment"
-          element={<App executionMode={executionMode} />}
-        />
+        <Route path="/alignment" element={<App />} />
         <Route path="/arbitrage" element={<ArbitragePage />} />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/settings" element={<SettingsPage />} />

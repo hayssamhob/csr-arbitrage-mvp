@@ -8,7 +8,6 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { AdvancedMetricsCard } from "./components/AdvancedMetricsCard";
 import { AlignmentDisplay } from "./components/AlignmentDisplay";
 import {
   GlobalStatusBar,
@@ -188,15 +187,11 @@ interface AlignmentData {
   csr25_usdt: BackendAlignment;
 }
 
-interface AppProps {
-  executionMode?: "OFF" | "MANUAL" | "AUTO";
-}
-
-function App({ executionMode = "MANUAL" }: AppProps) {
+function App() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [error, setError] = useState<string | null>(null);
-  const [priceHistory, setPriceHistory] = useState<PriceHistoryState>({
+  const [, setPriceHistory] = useState<PriceHistoryState>({
     csr_usdt: [],
     csr25_usdt: [],
   });
@@ -523,10 +518,85 @@ function App({ executionMode = "MANUAL" }: AppProps) {
     }
   }, [error]);
 
+  // Local mode state for this page (PAPER=observe only, MANUAL=confirm trades, AUTO=coming soon)
+  const [pageMode, setPageMode] = useState<"PAPER" | "MANUAL" | "AUTO">(
+    "MANUAL"
+  );
+  const [killSwitch, setKillSwitch] = useState(false);
+
+  const handleModeChange = (newMode: "PAPER" | "MANUAL" | "AUTO") => {
+    if (newMode === "AUTO" && killSwitch) {
+      alert("Cannot enable AUTO mode while kill switch is active");
+      return;
+    }
+    setPageMode(newMode);
+  };
+
+  // Map page mode to alignment execution mode
+  const alignmentExecutionMode: "OFF" | "MANUAL" | "AUTO" =
+    pageMode === "PAPER" ? "OFF" : pageMode;
+
   return (
     <div className="text-white">
       {/* Global Status Bar - service health indicators only */}
       <GlobalStatusBar services={services} lastDataUpdate={lastUpdate} />
+
+      {/* Page Header - matching ArbitragePage style */}
+      <div className="bg-slate-900 border-b border-slate-700 px-4 py-3">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold">⚡ DEX Price Alignment</h1>
+            <p className="text-slate-400 text-sm">
+              Primary objective: Keep DEX aligned with CEX
+            </p>
+          </div>
+
+          {/* Mode & Controls */}
+          <div className="flex items-center gap-4">
+            {/* Mode Selector */}
+            <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-1">
+              {(["PAPER", "MANUAL", "AUTO"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => handleModeChange(m)}
+                  disabled={m === "AUTO"}
+                  title={
+                    m === "PAPER"
+                      ? "Simulate trades without real execution"
+                      : m === "MANUAL"
+                      ? "Confirm each trade before execution"
+                      : "Automatic execution (coming soon)"
+                  }
+                  className={`px-3 py-1.5 text-xs font-medium rounded transition-all ${
+                    pageMode === m
+                      ? m === "PAPER"
+                        ? "bg-yellow-600 text-white"
+                        : m === "MANUAL"
+                        ? "bg-blue-600 text-white"
+                        : "bg-green-600 text-white"
+                      : "text-slate-400 hover:text-white hover:bg-slate-700"
+                  } ${m === "AUTO" ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+
+            {/* Kill Switch */}
+            <button
+              onClick={() => setKillSwitch(!killSwitch)}
+              title={killSwitch ? "Resume trading" : "Stop all trading"}
+              className={`px-3 py-1.5 text-xs font-bold rounded transition-all ${
+                killSwitch
+                  ? "bg-red-600 text-white animate-pulse"
+                  : "bg-emerald-600 text-white"
+              }`}
+            >
+              {killSwitch ? "🛑 STOPPED" : "🟢 ACTIVE"}
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Trade Panel Modal */}
       {showTradePanel && data && (
@@ -552,25 +622,17 @@ function App({ executionMode = "MANUAL" }: AppProps) {
       <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-4">
         {/* PRIMARY: DEX Price Alignment Cards */}
         <section className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <span className="text-2xl">⚡</span> DEX Price Alignment
-            </h2>
-            <span className="text-xs text-slate-500">
-              Primary objective: Keep DEX aligned with CEX
-            </span>
-          </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <AlignmentDisplay
               token="CSR"
               alignment={alignmentData?.csr_usdt || null}
-              executionMode={executionMode}
+              executionMode={alignmentExecutionMode}
               onExecute={handleAlignmentExecute}
             />
             <AlignmentDisplay
               token="CSR25"
               alignment={alignmentData?.csr25_usdt || null}
-              executionMode={executionMode}
+              executionMode={alignmentExecutionMode}
               onExecute={handleAlignmentExecute}
             />
           </div>
@@ -652,35 +714,6 @@ function App({ executionMode = "MANUAL" }: AppProps) {
                     }
                   : null
               }
-            />
-          </div>
-        </section>
-
-        {/* ADVANCED: Arbitrage Metrics (Collapsed) */}
-        <section className="mb-6">
-          <h3 className="text-sm font-medium text-slate-400 mb-3">
-            Advanced Analytics
-          </h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <AdvancedMetricsCard
-              token="CSR"
-              cexPrice={data?.market_state?.csr_usdt?.latoken_ticker?.bid || 0}
-              dexPrice={csrDexQuotes[0]?.executionPrice || 0}
-              deviationHistory={priceHistory.csr_usdt.map((p) => ({
-                timestamp: new Date(p.ts).getTime(),
-                deviationBps: p.spread_bps,
-              }))}
-              transactions={[]}
-            />
-            <AdvancedMetricsCard
-              token="CSR25"
-              cexPrice={data?.market_state?.csr25_usdt?.lbank_ticker?.bid || 0}
-              dexPrice={csr25DexQuotes[0]?.executionPrice || 0}
-              deviationHistory={priceHistory.csr25_usdt.map((p) => ({
-                timestamp: new Date(p.ts).getTime(),
-                deviationBps: p.spread_bps,
-              }))}
-              transactions={[]}
             />
           </div>
         </section>
