@@ -18,23 +18,12 @@ export interface ServiceStatus {
 
 interface GlobalStatusBarProps {
   services: ServiceStatus[];
-  executionMode: "OFF" | "MANUAL" | "AUTO";
-  onModeChange: (mode: "OFF" | "MANUAL" | "AUTO") => void;
-  killSwitchActive: boolean;
-  onKillSwitchToggle: () => void;
   lastDataUpdate: Date;
 }
 
 // Note: Freshness thresholds (CEX: 30s, DEX: 60s) are applied in App.tsx
 
-export function GlobalStatusBar({
-  services,
-  executionMode,
-  onModeChange,
-  killSwitchActive,
-  onKillSwitchToggle,
-  lastDataUpdate,
-}: GlobalStatusBarProps) {
+export function GlobalStatusBar({ services, lastDataUpdate }: GlobalStatusBarProps) {
   const allHealthy = services.every((s) => s.status === "ok" && !s.isStale);
   const hasErrors = services.some(
     (s) => s.status === "error" || s.status === "offline"
@@ -160,58 +149,6 @@ export function GlobalStatusBar({
             <span className="font-mono text-slate-300">
               {timeSinceUpdate()}
             </span>
-          </div>
-
-          {/* Unified Execution Controls */}
-          <div className="flex items-center gap-2 bg-slate-800/50 rounded-lg p-1 border border-slate-700">
-            {/* Mode Selector */}
-            <div className="flex items-center gap-1">
-              {(["OFF", "MANUAL"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => onModeChange(mode)}
-                  disabled={killSwitchActive && mode !== "OFF"}
-                  title={
-                    mode === "OFF"
-                      ? "Monitoring only - no trades will be executed"
-                      : "Manual mode - review and approve each trade before execution"
-                  }
-                  className={`px-3 py-1.5 text-xs font-medium rounded transition-all ${
-                    executionMode === mode
-                      ? mode === "OFF"
-                        ? "bg-slate-600 text-white"
-                        : "bg-blue-600 text-white"
-                      : "text-slate-400 hover:text-white hover:bg-slate-700"
-                  } ${
-                    killSwitchActive && mode !== "OFF"
-                      ? "opacity-50 cursor-not-allowed"
-                      : ""
-                  }`}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
-
-            {/* Separator */}
-            <div className="w-px h-5 bg-slate-600" />
-
-            {/* Kill Switch - Emergency Stop */}
-            <button
-              onClick={onKillSwitchToggle}
-              title={
-                killSwitchActive
-                  ? "⚠️ EMERGENCY STOP ACTIVE - All trading halted. Click to resume normal operation."
-                  : "🛡️ System is SAFE. Click to activate emergency stop and halt all trading immediately."
-              }
-              className={`px-3 py-1.5 text-xs font-bold rounded transition-all flex items-center gap-1 ${
-                killSwitchActive
-                  ? "bg-red-600 text-white animate-pulse"
-                  : "bg-emerald-600/80 text-white hover:bg-emerald-600"
-              }`}
-            >
-              {killSwitchActive ? "🛑 KILL ACTIVE" : "🛡️ SAFE"}
-            </button>
           </div>
         </div>
       </div>

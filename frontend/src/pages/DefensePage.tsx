@@ -70,8 +70,6 @@ export function DefensePage() {
     csr_usdt: PriceHistoryPoint[];
     csr25_usdt: PriceHistoryPoint[];
   }>({ csr_usdt: [], csr25_usdt: [] });
-  const [executionMode, setExecutionMode] = useState<"OFF" | "MANUAL" | "AUTO">("OFF");
-  const [killSwitchActive, setKillSwitchActive] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(new Date());
 
   useEffect(() => {
@@ -90,13 +88,25 @@ export function DefensePage() {
           if (data.market_state?.csr_usdt?.spread_bps !== undefined) {
             setPriceHistory((prev) => ({
               ...prev,
-              csr_usdt: [...prev.csr_usdt.slice(-19), { ts: data.ts, spread_bps: data.market_state.csr_usdt.spread_bps }],
+              csr_usdt: [
+                ...prev.csr_usdt.slice(-19),
+                {
+                  ts: data.ts,
+                  spread_bps: data.market_state.csr_usdt.spread_bps,
+                },
+              ],
             }));
           }
           if (data.market_state?.csr25_usdt?.spread_bps !== undefined) {
             setPriceHistory((prev) => ({
               ...prev,
-              csr25_usdt: [...prev.csr25_usdt.slice(-19), { ts: data.ts, spread_bps: data.market_state.csr25_usdt.spread_bps }],
+              csr25_usdt: [
+                ...prev.csr25_usdt.slice(-19),
+                {
+                  ts: data.ts,
+                  spread_bps: data.market_state.csr25_usdt.spread_bps,
+                },
+              ],
             }));
           }
         }
@@ -106,12 +116,16 @@ export function DefensePage() {
         try {
           const res = await fetch("/api/alignment/CSR");
           if (res.ok) setAlignmentCsr(await res.json());
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
 
         try {
           const res = await fetch("/api/alignment/CSR25");
           if (res.ok) setAlignmentCsr25(await res.json());
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       } catch (err) {
         console.error("Failed to fetch data:", err);
       }
@@ -127,7 +141,9 @@ export function DefensePage() {
     const services: ServiceStatus[] = [];
 
     const lbankTs = health?.lbank_gateway?.last_message_ts;
-    const lbankAge = lbankTs ? Math.floor((now - new Date(lbankTs).getTime()) / 1000) : undefined;
+    const lbankAge = lbankTs
+      ? Math.floor((now - new Date(lbankTs).getTime()) / 1000)
+      : undefined;
     services.push({
       name: "LBank",
       status: health?.lbank_gateway?.status === "healthy" ? "ok" : "error",
@@ -138,7 +154,9 @@ export function DefensePage() {
     });
 
     const latokenTs = health?.latoken_gateway?.last_message_ts;
-    const latokenAge = latokenTs ? Math.floor((now - new Date(latokenTs).getTime()) / 1000) : undefined;
+    const latokenAge = latokenTs
+      ? Math.floor((now - new Date(latokenTs).getTime()) / 1000)
+      : undefined;
     services.push({
       name: "LATOKEN",
       status: health?.latoken_gateway?.status === "healthy" ? "ok" : "error",
@@ -149,20 +167,26 @@ export function DefensePage() {
     });
 
     const dexCsrTs = health?.uniswap_quote_csr?.last_quote_ts;
-    const dexCsrAge = dexCsrTs ? Math.floor((now - new Date(dexCsrTs).getTime()) / 1000) : undefined;
+    const dexCsrAge = dexCsrTs
+      ? Math.floor((now - new Date(dexCsrTs).getTime()) / 1000)
+      : undefined;
     services.push({
       name: "DEX CSR",
-      status: health?.uniswap_quote_csr?.status === "healthy" ? "ok" : "warning",
+      status:
+        health?.uniswap_quote_csr?.status === "healthy" ? "ok" : "warning",
       lastUpdate: dexCsrTs || "",
       ageSeconds: dexCsrAge,
       isStale: dexCsrAge !== undefined && dexCsrAge > 60,
     });
 
     const dexCsr25Ts = health?.uniswap_quote_csr25?.last_quote_ts;
-    const dexCsr25Age = dexCsr25Ts ? Math.floor((now - new Date(dexCsr25Ts).getTime()) / 1000) : undefined;
+    const dexCsr25Age = dexCsr25Ts
+      ? Math.floor((now - new Date(dexCsr25Ts).getTime()) / 1000)
+      : undefined;
     services.push({
       name: "DEX CSR25",
-      status: health?.uniswap_quote_csr25?.status === "healthy" ? "ok" : "warning",
+      status:
+        health?.uniswap_quote_csr25?.status === "healthy" ? "ok" : "warning",
       lastUpdate: dexCsr25Ts || "",
       ageSeconds: dexCsr25Age,
       isStale: dexCsr25Age !== undefined && dexCsr25Age > 60,
@@ -172,19 +196,23 @@ export function DefensePage() {
       name: "Strategy",
       status: health?.strategy?.status === "healthy" ? "ok" : "warning",
       lastUpdate: dashboard?.ts || "",
-      ageSeconds: dashboard?.ts ? Math.floor((now - new Date(dashboard.ts).getTime()) / 1000) : undefined,
+      ageSeconds: dashboard?.ts
+        ? Math.floor((now - new Date(dashboard.ts).getTime()) / 1000)
+        : undefined,
     });
 
     return services;
   };
 
   const getCexPrice = (token: "CSR" | "CSR25"): number => {
-    if (token === "CSR") return dashboard?.market_state?.csr_usdt?.latoken?.mid || 0;
+    if (token === "CSR")
+      return dashboard?.market_state?.csr_usdt?.latoken?.mid || 0;
     return dashboard?.market_state?.csr25_usdt?.lbank?.mid || 0;
   };
 
   const getDexPrice = (token: "CSR" | "CSR25"): number => {
-    if (token === "CSR") return dashboard?.market_state?.csr_usdt?.uniswap?.price || 0;
+    if (token === "CSR")
+      return dashboard?.market_state?.csr_usdt?.uniswap?.price || 0;
     return dashboard?.market_state?.csr25_usdt?.uniswap?.price || 0;
   };
 
@@ -192,43 +220,59 @@ export function DefensePage() {
     <div className="min-h-screen bg-slate-950 text-white">
       <GlobalStatusBar
         services={buildServiceStatus()}
-        executionMode={executionMode}
-        onModeChange={setExecutionMode}
-        killSwitchActive={killSwitchActive}
-        onKillSwitchToggle={() => setKillSwitchActive(!killSwitchActive)}
         lastDataUpdate={lastUpdate}
       />
 
       <div className="max-w-7xl mx-auto px-4 py-4">
         <div className="mb-6">
           <h1 className="text-2xl font-bold">🛡️ DEX Price Defense</h1>
-          <p className="text-slate-400 text-sm mt-1">Keep Uniswap prices aligned with CEX reference prices</p>
+          <p className="text-slate-400 text-sm mt-1">
+            Keep Uniswap prices aligned with CEX reference prices
+          </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-slate-300">CSR / USDT</h2>
-            <AlignmentDisplay token="CSR" alignment={alignmentCsr} onExecute={() => {}} executionMode={executionMode} />
+            <AlignmentDisplay
+              token="CSR"
+              alignment={alignmentCsr}
+              onExecute={() => {}}
+              executionMode="MANUAL"
+            />
             <QuoteLadder token="CSR" />
             <AdvancedMetricsCard
               token="CSR"
               cexPrice={getCexPrice("CSR")}
               dexPrice={getDexPrice("CSR")}
-              deviationHistory={priceHistory.csr_usdt.map((p) => ({ timestamp: new Date(p.ts).getTime(), deviationBps: p.spread_bps }))}
+              deviationHistory={priceHistory.csr_usdt.map((p) => ({
+                timestamp: new Date(p.ts).getTime(),
+                deviationBps: p.spread_bps,
+              }))}
               transactions={[]}
             />
             <RecentSwaps token="CSR" />
           </div>
 
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-slate-300">CSR25 / USDT</h2>
-            <AlignmentDisplay token="CSR25" alignment={alignmentCsr25} onExecute={() => {}} executionMode={executionMode} />
+            <h2 className="text-lg font-semibold text-slate-300">
+              CSR25 / USDT
+            </h2>
+            <AlignmentDisplay
+              token="CSR25"
+              alignment={alignmentCsr25}
+              onExecute={() => {}}
+              executionMode="MANUAL"
+            />
             <QuoteLadder token="CSR25" />
             <AdvancedMetricsCard
               token="CSR25"
               cexPrice={getCexPrice("CSR25")}
               dexPrice={getDexPrice("CSR25")}
-              deviationHistory={priceHistory.csr25_usdt.map((p) => ({ timestamp: new Date(p.ts).getTime(), deviationBps: p.spread_bps }))}
+              deviationHistory={priceHistory.csr25_usdt.map((p) => ({
+                timestamp: new Date(p.ts).getTime(),
+                deviationBps: p.spread_bps,
+              }))}
               transactions={[]}
             />
             <RecentSwaps token="CSR25" />

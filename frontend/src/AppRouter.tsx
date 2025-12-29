@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { Navigate, NavLink, Route, Routes } from "react-router-dom";
 import App from "./App";
+import { useWallet } from "./hooks/useWallet";
 import { ArbitragePage } from "./pages/ArbitragePage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -17,17 +18,19 @@ interface NavigationProps {
 }
 
 function Navigation({ executionMode, onModeChange }: NavigationProps) {
+  const wallet = useWallet();
+
   return (
     <nav className="bg-slate-900/95 border-b border-slate-700/50">
-      <div className="max-w-7xl mx-auto px-4 flex items-center justify-between h-16">
+      <div className="max-w-7xl mx-auto px-4 flex items-center justify-between h-14">
         {/* Left: Logo + Title */}
         <div className="flex items-center gap-3">
           <img
             src="/depollute-logo-256.png"
             alt="Depollute Now!"
-            className="h-10 w-10 rounded-lg"
+            className="h-9 w-9 rounded-lg"
           />
-          <span className="text-lg font-bold bg-gradient-to-r from-emerald-400 to-green-300 bg-clip-text text-transparent">
+          <span className="hidden sm:block text-lg font-bold bg-gradient-to-r from-emerald-400 to-green-300 bg-clip-text text-transparent">
             CSR Trading Hub
           </span>
         </div>
@@ -37,61 +40,62 @@ function Navigation({ executionMode, onModeChange }: NavigationProps) {
           <NavLink
             to="/alignment"
             className={({ isActive }) =>
-              `px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              `px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                 isActive
                   ? "bg-blue-600 text-white"
                   : "text-slate-400 hover:text-white hover:bg-slate-800"
               }`
             }
           >
-            ⚖️ Alignment
+            <span className="hidden sm:inline">⚖️ </span>Alignment
           </NavLink>
           <NavLink
             to="/arbitrage"
             className={({ isActive }) =>
-              `px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              `px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                 isActive
                   ? "bg-blue-600 text-white"
                   : "text-slate-400 hover:text-white hover:bg-slate-800"
               }`
             }
           >
-            📈 Arbitrage
+            <span className="hidden sm:inline">📈 </span>Arbitrage
           </NavLink>
           <NavLink
             to="/inventory"
             className={({ isActive }) =>
-              `px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              `px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                 isActive
                   ? "bg-blue-600 text-white"
                   : "text-slate-400 hover:text-white hover:bg-slate-800"
               }`
             }
           >
-            💰 Inventory
+            <span className="hidden sm:inline">💰 </span>Inventory
           </NavLink>
           <NavLink
             to="/settings"
             className={({ isActive }) =>
-              `px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              `px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                 isActive
                   ? "bg-blue-600 text-white"
                   : "text-slate-400 hover:text-white hover:bg-slate-800"
               }`
             }
           >
-            ⚙️ Settings
+            <span className="hidden sm:inline">⚙️ </span>Settings
           </NavLink>
         </div>
 
-        {/* Right: Execution Mode Controls */}
+        {/* Right: Mode Controls + Wallet */}
         <div className="flex items-center gap-2">
-          <div className="flex bg-slate-800 rounded-lg p-1">
+          {/* Execution Mode */}
+          <div className="hidden sm:flex bg-slate-800 rounded-lg p-0.5">
             {(["OFF", "MANUAL", "AUTO"] as ExecutionMode[]).map((mode) => (
               <button
                 key={mode}
                 onClick={() => onModeChange(mode)}
-                className={`px-3 py-1 text-xs font-medium rounded transition-all ${
+                className={`px-2 py-1 text-xs font-medium rounded transition-all ${
                   executionMode === mode
                     ? mode === "OFF"
                       ? "bg-slate-600 text-white"
@@ -105,6 +109,30 @@ function Navigation({ executionMode, onModeChange }: NavigationProps) {
               </button>
             ))}
           </div>
+
+          {/* Wallet Button */}
+          {wallet.isConnected ? (
+            <div className="flex items-center gap-1.5 bg-slate-800 rounded-lg px-2 py-1 border border-slate-700">
+              <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+              <span className="font-mono text-xs text-emerald-400">
+                {wallet.address?.slice(0, 4)}...{wallet.address?.slice(-3)}
+              </span>
+              <button
+                onClick={wallet.disconnect}
+                className="text-xs text-slate-400 hover:text-red-400"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={wallet.connect}
+              disabled={wallet.isConnecting}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 text-white rounded-lg font-medium text-xs transition-colors"
+            >
+              {wallet.isConnecting ? "..." : "🦊 Connect"}
+            </button>
+          )}
         </div>
       </div>
     </nav>
