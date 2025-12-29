@@ -9,6 +9,23 @@ import { createClient } from '@supabase/supabase-js';
 import * as crypto from 'crypto';
 import { Router } from "express";
 import { AuthenticatedRequest, requireAuth } from "../middleware/auth";
+import axios from "axios";
+
+// Token contract addresses on Ethereum mainnet
+const TOKEN_CONTRACTS = {
+  CSR: "0x6bba316c48b49bd1eac44573c5c871ff02958469",
+  CSR25: "0x0f5c78f152152dda52a2ea45b0a8c10733010748",
+  USDT: "0xdac17f958d2ee523a2206206994597c13d831ec7",
+  USDC: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+  WETH: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+};
+
+// ERC20 ABI for balance checking
+const ERC20_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)",
+];
 
 const router = Router();
 
@@ -548,9 +565,29 @@ router.get("/balances", requireAuth, async (req: AuthenticatedRequest, res) => {
 
   const savedWalletAddress = wallets?.[0]?.address || null;
 
+  // Fetch wallet balances if we have a saved address
+  if (savedWalletAddress) {
+    try {
+      const walletBalances = await fetchWalletBalances(savedWalletAddress);
+      balances.push(...walletBalances);
+      exchangeStatuses.wallet = { connected: true, error: null };
+    } catch (walletErr: any) {
+      console.error("Wallet balance fetch error:", walletErr.message);
+      exchangeStatuses.wallet = { connected: true, error: walletErr.message };
+    }
+  }
+
+  // Fetch current prices and calculate USD values
+  const prices = await fetchCurrentPrices();
+  const balancesWithUsd = calculateUsdValues(balances, prices);
+  const totalUsd = balancesWithUsd.reduce(
+    (sum, b) => sum + (b.usd_value || 0),
+    0
+  );
+
   res.json({
-    balances,
-    total_usd: balances.reduce((sum, b) => sum + (b.usd_value || 0), 0),
+    balances: balancesWithUsd,
+    total_usd: totalUsd,
     exchange_statuses: exchangeStatuses,
     exposure: {
       max_per_trade_usd: limits?.max_order_usdt || 1000,
@@ -559,6 +596,7 @@ router.get("/balances", requireAuth, async (req: AuthenticatedRequest, res) => {
     },
     last_update: new Date().toISOString(),
     saved_wallet_address: savedWalletAddress,
+    prices: prices,
   });
 });
 
@@ -644,6 +682,134 @@ async function fetchLbankBalances(
     console.error("LBank balance fetch error:", error.message);
     throw new Error(`LBank: ${error.message}`);
   }
+}
+
+// Helper to fetch wallet balances from Ethereum blockchain
+async function fetchWalletBalances(walletAddress: string): Promise<any[]> {
+  const ethers = require("ethers");
+  const balances: any[] = [];
+
+  try {
+    // Use public RPC endpoint
+    const rpcUrl = process.env.RPC_URL || "https://eth.llamarpc.com";
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+
+    // Fetch ETH balance
+    const ethBalance = await provider.getBalance(walletAddress);
+    const ethBalanceFormatted = parseFloat(ethers.formatEther(ethBalance));
+
+    if (ethBalanceFormatted > 0) {
+      balances.push({
+        venue: "Wallet",
+        asset: "ETH",
+        available: ethBalanceFormatted,
+        locked: 0,
+        total: ethBalanceFormatted,
+        usd_value: 0,
+        contract_address: null,
+      });
+    }
+
+    // Fetch token balances for CSR and CSR25
+    const tokensToCheck = [
+      { symbol: "CSR", address: TOKEN_CONTRACTS.CSR, decimals: 18 },
+      { symbol: "CSR25", address: TOKEN_CONTRACTS.CSR25, decimals: 18 },
+      { symbol: "USDT", address: TOKEN_CONTRACTS.USDT, decimals: 6 },
+      { symbol: "USDC", address: TOKEN_CONTRACTS.USDC, decimals: 6 },
+    ];
+
+    for (const token of tokensToCheck) {
+      try {
+        const contract = new ethers.Contract(
+          token.address,
+          ERC20_ABI,
+          provider
+        );
+        const balance = await contract.balanceOf(walletAddress);
+        const formattedBalance = parseFloat(
+          ethers.formatUnits(balance, token.decimals)
+        );
+
+        if (formattedBalance > 0) {
+          balances.push({
+            venue: "Wallet",
+            asset: token.symbol,
+            available: formattedBalance,
+            locked: 0,
+            total: formattedBalance,
+            usd_value: 0,
+            contract_address: token.address,
+          });
+        }
+      } catch (tokenErr: any) {
+        console.warn(
+          `Failed to fetch ${token.symbol} balance:`,
+          tokenErr.message
+        );
+      }
+    }
+
+    return balances;
+  } catch (error: any) {
+    console.error("Wallet balance fetch error:", error.message);
+    return balances;
+  }
+}
+
+// Helper to fetch current prices for USD value calculation
+async function fetchCurrentPrices(): Promise<Record<string, number>> {
+  const prices: Record<string, number> = {
+    ETH: 0,
+    USDT: 1,
+    USDC: 1,
+    CSR: 0,
+    CSR25: 0,
+  };
+
+  try {
+    // Fetch ETH price from CoinGecko
+    const ethResponse = await axios.get(
+      "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
+      { timeout: 5000 }
+    );
+    prices.ETH = ethResponse.data?.ethereum?.usd || 0;
+  } catch (err) {
+    console.warn("Failed to fetch ETH price");
+  }
+
+  // Fetch CSR/CSR25 prices from our own dashboard API
+  try {
+    const dashboardUrl = process.env.DASHBOARD_URL || "http://localhost:8001";
+    const response = await axios.get(`${dashboardUrl}/api/dashboard`, {
+      timeout: 5000,
+    });
+    const data = response.data;
+
+    // Get CSR price from LATOKEN
+    if (data?.market_state?.csr_usdt?.latoken_ticker?.last) {
+      prices.CSR = data.market_state.csr_usdt.latoken_ticker.last;
+    }
+
+    // Get CSR25 price from LBank
+    if (data?.market_state?.csr25_usdt?.lbank_ticker?.last) {
+      prices.CSR25 = data.market_state.csr25_usdt.lbank_ticker.last;
+    }
+  } catch (err) {
+    console.warn("Failed to fetch CSR/CSR25 prices from dashboard");
+  }
+
+  return prices;
+}
+
+// Helper to calculate USD values for balances
+function calculateUsdValues(
+  balances: any[],
+  prices: Record<string, number>
+): any[] {
+  return balances.map((balance) => ({
+    ...balance,
+    usd_value: (balance.total || 0) * (prices[balance.asset] || 0),
+  }));
 }
 
 export default router;

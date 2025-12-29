@@ -30,6 +30,102 @@ interface VenueBalance {
   locked: number;
   total: number;
   usd_value: number;
+  contract_address?: string;
+}
+
+// Helper to get exchange URL for an asset
+function getExchangeUrl(venue: string, asset: string): string | null {
+  const venueUrls: Record<string, Record<string, string>> = {
+    LBank: {
+      CSR25: "https://www.lbank.com/trade/csr25_usdt/",
+      USDT: "https://www.lbank.com/trade/csr25_usdt/",
+    },
+    LATOKEN: {
+      CSR: "https://latoken.com/exchange/CSR_USDT",
+      USDT: "https://latoken.com/exchange/CSR_USDT",
+    },
+    Wallet: {
+      ETH: "https://etherscan.io/token/",
+      CSR: "https://etherscan.io/token/0x6bba316c48b49bd1eac44573c5c871ff02958469",
+      CSR25:
+        "https://etherscan.io/token/0x0f5c78f152152dda52a2ea45b0a8c10733010748",
+      USDT: "https://etherscan.io/token/0xdac17f958d2ee523a2206206994597c13d831ec7",
+      USDC: "https://etherscan.io/token/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+    },
+  };
+  return venueUrls[venue]?.[asset] || null;
+}
+
+// Tooltip component
+function Tooltip({
+  children,
+  text,
+}: {
+  children: React.ReactNode;
+  text: string;
+}) {
+  return (
+    <div className="group relative inline-block">
+      {children}
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-slate-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-slate-600">
+        {text}
+        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800"></div>
+      </div>
+    </div>
+  );
+}
+
+// Clickable value component
+function ClickableValue({
+  value,
+  href,
+  prefix = "",
+  suffix = "",
+  className = "",
+  tooltip,
+}: {
+  value: string | number;
+  href?: string | null;
+  prefix?: string;
+  suffix?: string;
+  className?: string;
+  tooltip?: string;
+}) {
+  const content = (
+    <span
+      className={`font-mono ${className} ${
+        href
+          ? "hover:text-emerald-400 cursor-pointer underline decoration-dotted underline-offset-2"
+          : ""
+      }`}
+    >
+      {prefix}
+      {typeof value === "number"
+        ? value.toLocaleString(undefined, { maximumFractionDigits: 6 })
+        : value}
+      {suffix}
+    </span>
+  );
+
+  const wrapped = tooltip ? (
+    <Tooltip text={tooltip}>{content}</Tooltip>
+  ) : (
+    content
+  );
+
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-block"
+      >
+        {wrapped}
+      </a>
+    );
+  }
+  return wrapped;
 }
 
 interface ExchangeStatus {
@@ -309,18 +405,36 @@ export function InventoryPage() {
                     className="px-4 py-3 flex items-center justify-between"
                   >
                     <div>
-                      <div className="font-medium">{balance.asset}</div>
+                      <Tooltip text={`View ${balance.asset} on ${venue}`}>
+                        <a
+                          href={getExchangeUrl(venue, balance.asset) || "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium hover:text-emerald-400 transition-colors"
+                        >
+                          {balance.asset} ↗
+                        </a>
+                      </Tooltip>
                       <div className="text-xs text-slate-500">
                         {balance.locked > 0 &&
                           `${balance.locked.toLocaleString()} locked`}
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="font-mono">
-                        {balance.available.toLocaleString()}
-                      </div>
+                      <ClickableValue
+                        value={balance.available}
+                        href={getExchangeUrl(venue, balance.asset)}
+                        tooltip={`Available balance: ${balance.available.toLocaleString()} ${
+                          balance.asset
+                        }`}
+                      />
                       <div className="text-xs text-slate-400">
-                        ${balance.usd_value.toFixed(2)}
+                        <ClickableValue
+                          value={balance.usd_value.toFixed(2)}
+                          prefix="$"
+                          tooltip={`USD value based on current market price`}
+                          className="text-slate-400"
+                        />
                       </div>
                     </div>
                   </div>

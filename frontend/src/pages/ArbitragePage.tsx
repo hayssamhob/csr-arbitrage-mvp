@@ -8,6 +8,8 @@
  * - Real opportunities from LATOKEN and LBank APIs
  * - Expected PnL after costs
  * - Advanced analytics
+ * - Price impact calculations
+ * - Trade execution interface
  */
 
 import { useEffect, useState } from "react";
@@ -17,6 +19,76 @@ import { Footer } from "../components/Footer";
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.PROD ? "" : "http://localhost:8001");
+
+// Helper to get exchange URL for a market
+function getExchangeUrl(venue: string, market: string): string {
+  const token = market.split('/')[0];
+  const urls: Record<string, Record<string, string>> = {
+    LATOKEN: { CSR: "https://latoken.com/exchange/CSR_USDT" },
+    LBank: { CSR25: "https://www.lbank.com/trade/csr25_usdt/" },
+  };
+  return urls[venue]?.[token] || "#";
+}
+
+function getDexUrl(market: string): string {
+  const token = market.split('/')[0];
+  const urls: Record<string, string> = {
+    CSR: "https://app.uniswap.org/swap?inputCurrency=0xdac17f958d2ee523a2206206994597c13d831ec7&outputCurrency=0x6bba316c48b49bd1eac44573c5c871ff02958469",
+    CSR25: "https://app.uniswap.org/swap?inputCurrency=0xdac17f958d2ee523a2206206994597c13d831ec7&outputCurrency=0x0f5c78f152152dda52a2ea45b0a8c10733010748",
+  };
+  return urls[token] || "#";
+}
+
+// Tooltip component for ArbitragePage
+function Tooltip({ children, text }: { children: React.ReactNode; text: string }) {
+  return (
+    <div className="group relative inline-block">
+      {children}
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-slate-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-slate-600 max-w-xs">
+        {text}
+        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800"></div>
+      </div>
+    </div>
+  );
+}
+
+// Clickable price component
+function ClickablePrice({ 
+  price, 
+  href, 
+  className = "",
+  tooltip,
+}: { 
+  price: number; 
+  href?: string; 
+  className?: string;
+  tooltip?: string;
+}) {
+  const formatPrice = (p: number): string => {
+    if (p < 0.0001) return p.toFixed(8);
+    if (p < 0.01) return p.toFixed(6);
+    if (p < 1) return p.toFixed(4);
+    return p.toFixed(2);
+  };
+
+  const content = (
+    <span className={`font-mono ${className} ${href ? "hover:text-emerald-400 cursor-pointer underline decoration-dotted underline-offset-2" : ""}`}>
+      ${formatPrice(price)}
+    </span>
+  );
+  
+  const wrapped = tooltip ? <Tooltip text={tooltip}>{content}</Tooltip> : content;
+  
+  if (href) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="inline-block">
+        {wrapped}
+      </a>
+    );
+  }
+  return wrapped;
+}
+
 
 interface Opportunity {
   market: string;
@@ -247,13 +319,6 @@ export function ArbitragePage() {
     return () => clearInterval(interval);
   }, []);
 
-  const formatPrice = (price: number): string => {
-    if (price < 0.0001) return price.toFixed(8);
-    if (price < 0.01) return price.toFixed(6);
-    if (price < 1) return price.toFixed(4);
-    return price.toFixed(2);
-  };
-
   const handleModeChange = (mode: "PAPER" | "MANUAL" | "AUTO") => {
     if (mode === "AUTO" && state.kill_switch) {
       alert("Cannot enable AUTO mode while kill switch is active");
@@ -419,19 +484,41 @@ export function ArbitragePage() {
                   >
                     <td className="px-4 py-3 font-medium">{opp.market}</td>
                     <td className="px-4 py-3 text-slate-400">
-                      {opp.cex_venue}
+                      <Tooltip text={`View ${opp.market} on ${opp.cex_venue}`}>
+                        <a
+                          href={getExchangeUrl(opp.cex_venue, opp.market)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:text-emerald-400 transition-colors"
+                        >
+                          {opp.cex_venue} ↗
+                        </a>
+                      </Tooltip>
                     </td>
                     <td className="px-4 py-3 text-right font-mono">
-                      <span className="text-emerald-400">
-                        ${formatPrice(opp.cex_bid)}
-                      </span>
+                      <ClickablePrice
+                        price={opp.cex_bid}
+                        href={getExchangeUrl(opp.cex_venue, opp.market)}
+                        className="text-emerald-400"
+                        tooltip={`Best bid price on ${opp.cex_venue} - click to view`}
+                      />
                       <span className="text-slate-500 mx-1">/</span>
-                      <span className="text-red-400">
-                        ${formatPrice(opp.cex_ask)}
-                      </span>
+                      <ClickablePrice
+                        price={opp.cex_ask}
+                        href={getExchangeUrl(opp.cex_venue, opp.market)}
+                        className="text-red-400"
+                        tooltip={`Best ask price on ${opp.cex_venue} - click to view`}
+                      />
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-blue-400">
-                      ${formatPrice(opp.dex_exec_price)}
+                    <td className="px-4 py-3 text-right font-mono">
+                      <ClickablePrice
+                        price={opp.dex_exec_price}
+                        href={getDexUrl(opp.market)}
+                        className="text-blue-400"
+                        tooltip={`DEX execution price on Uniswap - includes ${opp.dex_price_impact.toFixed(
+                          2
+                        )}% price impact`}
+                      />
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div
