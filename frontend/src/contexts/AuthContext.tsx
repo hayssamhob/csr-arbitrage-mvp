@@ -1,6 +1,6 @@
 /**
  * AuthContext - Provides authentication state and methods throughout the app
- * Uses Supabase Auth with email magic link
+ * Uses Supabase Auth with email magic link and email/password
  */
 
 import {
@@ -12,11 +12,24 @@ import {
 } from 'react';
 import { supabase, type Session, type User } from '../lib/supabase';
 
+// Production redirect URL
+const REDIRECT_URL = import.meta.env.PROD 
+  ? 'https://trade.depollutenow.com'
+  : window.location.origin;
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
   signInWithEmail: (email: string) => Promise<{ error: Error | null }>;
+  signInWithPassword: (
+    email: string,
+    password: string
+  ) => Promise<{ error: Error | null }>;
+  signUpWithPassword: (
+    email: string,
+    password: string
+  ) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   getAccessToken: () => Promise<string | null>;
 }
@@ -52,7 +65,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: window.location.origin,
+        emailRedirectTo: REDIRECT_URL,
+      },
+    });
+    return { error: error as Error | null };
+  };
+
+  const signInWithPassword = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    return { error: error as Error | null };
+  };
+
+  const signUpWithPassword = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: REDIRECT_URL,
       },
     });
     return { error: error as Error | null };
@@ -74,6 +106,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         loading,
         signInWithEmail,
+        signInWithPassword,
+        signUpWithPassword,
         signOut,
         getAccessToken,
       }}
