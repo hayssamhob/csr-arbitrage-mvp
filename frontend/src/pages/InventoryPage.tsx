@@ -329,28 +329,64 @@ export function InventoryPage() {
   const fetchRecentTransactions = async (address: string) => {
     setLoadingTxs(true);
     try {
-      // Fetch from Etherscan API - using free tier
-      const response = await fetch(
-        `https://api.etherscan.io/api?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&page=1&offset=10&sort=desc`
-      );
-      const data = await response.json();
+      // Fetch both ETH transactions and ERC20 token transfers
+      const [ethResponse, tokenResponse] = await Promise.all([
+        fetch(
+          `https://api.etherscan.io/api?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&page=1&offset=10&sort=desc`
+        ),
+        fetch(
+          `https://api.etherscan.io/api?module=account&action=tokentx&address=${address}&startblock=0&endblock=99999999&page=1&offset=10&sort=desc`
+        ),
+      ]);
 
-      if (data.status === "1" && Array.isArray(data.result)) {
-        const txs: RecentTransaction[] = data.result
-          .slice(0, 5)
-          .map((tx: any) => ({
+      const ethData = await ethResponse.json();
+      const tokenData = await tokenResponse.json();
+
+      const allTxs: RecentTransaction[] = [];
+
+      // Process ETH transactions
+      if (ethData.status === "1" && Array.isArray(ethData.result)) {
+        ethData.result.slice(0, 5).forEach((tx: any) => {
+          if (parseFloat(tx.value) > 0) {
+            allTxs.push({
+              hash: tx.hash,
+              type:
+                tx.from.toLowerCase() === address.toLowerCase()
+                  ? "transfer"
+                  : "receive",
+              amount: (parseFloat(tx.value) / 1e18).toFixed(4),
+              token: "ETH",
+              timestamp: new Date(parseInt(tx.timeStamp) * 1000).toISOString(),
+              status: tx.txreceipt_status === "1" ? "confirmed" : "pending",
+            });
+          }
+        });
+      }
+
+      // Process ERC20 token transfers
+      if (tokenData.status === "1" && Array.isArray(tokenData.result)) {
+        tokenData.result.slice(0, 10).forEach((tx: any) => {
+          const decimals = parseInt(tx.tokenDecimal) || 18;
+          allTxs.push({
             hash: tx.hash,
             type:
               tx.from.toLowerCase() === address.toLowerCase()
                 ? "transfer"
                 : "receive",
-            amount: (parseFloat(tx.value) / 1e18).toFixed(4),
-            token: "ETH",
+            amount: (parseFloat(tx.value) / Math.pow(10, decimals)).toFixed(4),
+            token: tx.tokenSymbol || "TOKEN",
             timestamp: new Date(parseInt(tx.timeStamp) * 1000).toISOString(),
-            status: tx.txreceipt_status === "1" ? "confirmed" : "pending",
-          }));
-        setRecentTxs(txs);
+            status: "confirmed",
+          });
+        });
       }
+
+      // Sort by timestamp and take top 10
+      allTxs.sort(
+        (a, b) =>
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+      setRecentTxs(allTxs.slice(0, 10));
     } catch (err) {
       console.error("Failed to fetch transactions:", err);
     }

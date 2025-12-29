@@ -100,7 +100,7 @@ function TradeExecutionModal({
   onClose: () => void;
   mode: "PAPER" | "MANUAL" | "AUTO";
 }) {
-  const [tradeSize, setTradeSize] = useState(opportunity.max_safe_size);
+  const [tradeSize, setTradeSize] = useState(100); // Default 100 USDT, no max limit
   const [isExecuting, setIsExecuting] = useState(false);
 
   // Calculate price impact based on trade size
@@ -151,8 +151,19 @@ function TradeExecutionModal({
       // BUY_DEX_SELL_CEX: Buy on Uniswap, Sell on CEX
       // BUY_CEX_SELL_DEX: Buy on CEX, Sell on Uniswap
 
+      // Token addresses
+      const tokenAddress =
+        token === "CSR"
+          ? "0x6bba316c48b49bd1eac44573c5c871ff02958469"
+          : "0x0f5c78f152152dda52a2ea45b0a8c10733010748";
+      const usdtAddress = "0xdac17f958d2ee523a2206206994597c13d831ec7";
+
+      // Calculate token amount from USDT size
+      const tokenAmount = tradeSize / opportunity.cex_mid;
+
       if (opportunity.direction === "BUY_CEX_SELL_DEX") {
-        // Step 1: Buy on CEX
+        // SIMULTANEOUS EXECUTION: Buy on CEX, Sell on DEX
+        // Step 1: Execute CEX BUY order
         const cexResponse = await fetch(`${API_URL}/api/me/trade/cex`, {
           method: "POST",
           headers: {
@@ -163,33 +174,65 @@ function TradeExecutionModal({
             exchange: opportunity.cex_venue.toLowerCase(),
             symbol: cexSymbol,
             side: "buy",
-            amount: tradeSize / opportunity.cex_ask, // Convert USDT to token amount
+            amount: tokenAmount,
           }),
         });
 
         const cexResult = await cexResponse.json();
         if (!cexResult.success) {
-          throw new Error(`CEX trade failed: ${cexResult.error}`);
+          throw new Error(`CEX BUY failed: ${cexResult.error}`);
+        }
+
+        // Step 2: Open Uniswap to SELL the tokens (swap token -> USDT)
+        const uniswapSellUrl = `https://app.uniswap.org/swap?inputCurrency=${tokenAddress}&outputCurrency=${usdtAddress}&exactAmount=${tokenAmount.toFixed(
+          2
+        )}`;
+        window.open(uniswapSellUrl, "_blank");
+
+        alert(
+          `✅ ARBITRAGE INITIATED!\n\n` +
+            `CEX BUY: ${
+              cexResult.order.filled || tokenAmount.toFixed(2)
+            } ${token} on ${opportunity.cex_venue}\n` +
+            `Order ID: ${cexResult.order.id}\n\n` +
+            `DEX SELL: Uniswap opened in new tab - complete the swap to finish arbitrage!`
+        );
+      } else {
+        // BUY_DEX_SELL_CEX: Buy on DEX, Sell on CEX
+        // Step 1: Open Uniswap to BUY tokens (swap USDT -> token)
+        const uniswapBuyUrl = `https://app.uniswap.org/swap?inputCurrency=${usdtAddress}&outputCurrency=${tokenAddress}&exactAmount=${tradeSize}`;
+        window.open(uniswapBuyUrl, "_blank");
+
+        // Step 2: Execute CEX SELL order
+        const cexResponse = await fetch(`${API_URL}/api/me/trade/cex`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            exchange: opportunity.cex_venue.toLowerCase(),
+            symbol: cexSymbol,
+            side: "sell",
+            amount: tokenAmount,
+          }),
+        });
+
+        const cexResult = await cexResponse.json();
+        if (!cexResult.success) {
+          throw new Error(`CEX SELL failed: ${cexResult.error}`);
         }
 
         alert(
-          `✅ CEX BUY executed!\nOrder ID: ${cexResult.order.id}\nFilled: ${cexResult.order.filled} ${token}\n\n⚠️ To complete arbitrage, sell on Uniswap using your wallet.`
-        );
-      } else {
-        // BUY_DEX_SELL_CEX: First buy on DEX (user signs), then sell on CEX
-        // Step 1: Prepare DEX trade (user needs to sign)
-        alert(
-          `To execute this arbitrage:\n\n1. Buy ${token} on Uniswap (opens in new tab)\n2. Then sell on ${opportunity.cex_venue}\n\nOpening Uniswap...`
-        );
-
-        // Open Uniswap with pre-filled swap
-        const tokenAddress =
-          token === "CSR"
-            ? "0x6bba316c48b49bd1eac44573c5c871ff02958469"
-            : "0x0f5c78f152152dda52a2ea45b0a8c10733010748";
-        window.open(
-          `https://app.uniswap.org/swap?inputCurrency=0xdac17f958d2ee523a2206206994597c13d831ec7&outputCurrency=${tokenAddress}&exactAmount=${tradeSize}`,
-          "_blank"
+          `✅ ARBITRAGE INITIATED!\n\n` +
+            `DEX BUY: Uniswap opened - buy ${tokenAmount.toFixed(
+              2
+            )} ${token}\n\n` +
+            `CEX SELL: Order placed for ${tokenAmount.toFixed(2)} ${token} on ${
+              opportunity.cex_venue
+            }\n` +
+            `Order ID: ${cexResult.order.id}\n\n` +
+            `Complete the Uniswap swap to finish arbitrage!`
         );
       }
 
@@ -261,27 +304,32 @@ function TradeExecutionModal({
               type="number"
               value={tradeSize}
               onChange={(e) =>
-                setTradeSize(
-                  Math.max(
-                    10,
-                    Math.min(
-                      parseFloat(e.target.value) || 0,
-                      opportunity.max_safe_size * 2
-                    )
-                  )
-                )
+                setTradeSize(Math.max(1, parseFloat(e.target.value) || 0))
               }
               className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 font-mono text-lg"
-              min={10}
-              max={opportunity.max_safe_size * 2}
+              min={1}
               step={10}
             />
-            <button
-              onClick={() => setTradeSize(opportunity.max_safe_size)}
-              className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm"
-            >
-              Max Safe
-            </button>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setTradeSize(100)}
+                className="px-2 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs"
+              >
+                $100
+              </button>
+              <button
+                onClick={() => setTradeSize(500)}
+                className="px-2 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs"
+              >
+                $500
+              </button>
+              <button
+                onClick={() => setTradeSize(1000)}
+                className="px-2 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs"
+              >
+                $1K
+              </button>
+            </div>
           </div>
           <div className="text-xs text-slate-500 mt-1">
             Recommended max: ${opportunity.max_safe_size} • You entered: $
