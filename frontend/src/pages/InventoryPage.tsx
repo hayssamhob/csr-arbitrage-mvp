@@ -35,6 +35,7 @@ interface VenueBalance {
 
 interface LiquidityPosition {
   tokenId: string;
+  version?: string; // V3 or V4
   token0: { address: string; symbol: string; decimals: number };
   token1: { address: string; symbol: string; decimals: number };
   fee: number;
@@ -46,6 +47,8 @@ interface LiquidityPosition {
   token0_price: number;
   token1_price: number;
   rewards_usd: number;
+  poolId?: string; // V4 only
+  hooks?: string; // V4 only
 }
 
 interface UserWallet {
@@ -741,10 +744,21 @@ export function InventoryPage() {
                     className="bg-slate-800/50 rounded-lg p-4 border border-slate-700"
                   >
                     <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-pink-400 text-sm font-medium">
-                          Liquidity Pool
-                        </span>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                              pos.version === "V4"
+                                ? "bg-purple-500/20 text-purple-400"
+                                : "bg-pink-500/20 text-pink-400"
+                            }`}
+                          >
+                            {pos.version || "V3"}
+                          </span>
+                          <span className="text-sm font-medium">
+                            {pos.token0.symbol}/{pos.token1.symbol}
+                          </span>
+                        </div>
                         <a
                           href={`https://app.uniswap.org/pool/${pos.tokenId}`}
                           target="_blank"

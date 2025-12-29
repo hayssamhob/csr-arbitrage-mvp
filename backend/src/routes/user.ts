@@ -816,6 +816,17 @@ function calculateUsdValues(
 // Uniswap V3 Position Manager contract address
 const UNISWAP_V3_POSITIONS_NFT = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88";
 
+// Uniswap V4 Position Manager contract address (mainnet)
+const UNISWAP_V4_POSITION_MANAGER = "0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e";
+
+// Uniswap V4 Position Manager ABI
+const V4_POSITION_MANAGER_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
+  "function positionInfo(uint256 tokenId) view returns (bytes25 poolId, int24 tickLower, int24 tickUpper, uint128 liquidity)",
+  "function poolKeys(bytes25 poolId) view returns (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks)",
+];
+
 // Uniswap V2 pair contracts for CSR tokens
 const UNISWAP_V2_PAIRS: Record<
   string,
@@ -944,6 +955,78 @@ async function fetchUniswapV3Positions(walletAddress: string): Promise<any[]> {
   }
 }
 
+// Helper to fetch Uniswap V4 liquidity positions for a wallet
+async function fetchUniswapV4Positions(walletAddress: string): Promise<any[]> {
+  const ethers = require("ethers");
+  const positions: any[] = [];
+
+  try {
+    const rpcUrl = process.env.RPC_URL || "https://ethereum-rpc.publicnode.com";
+    const provider = new ethers.JsonRpcProvider(rpcUrl);
+
+    const positionManager = new ethers.Contract(
+      UNISWAP_V4_POSITION_MANAGER,
+      V4_POSITION_MANAGER_ABI,
+      provider
+    );
+
+    // Get number of V4 positions owned by wallet
+    const balance = await positionManager.balanceOf(walletAddress);
+    const numPositions = Number(balance);
+
+    console.log(`Found ${numPositions} Uniswap V4 positions for ${walletAddress}`);
+
+    // Fetch each position
+    for (let i = 0; i < Math.min(numPositions, 10); i++) {
+      try {
+        const tokenId = await positionManager.tokenOfOwnerByIndex(walletAddress, i);
+        const posInfo = await positionManager.positionInfo(tokenId);
+        
+        // Get pool keys for this position
+        const poolKey = await positionManager.poolKeys(posInfo.poolId);
+        
+        const token0Address = poolKey.currency0.toLowerCase();
+        const token1Address = poolKey.currency1.toLowerCase();
+        const token0Info = TOKEN_SYMBOLS[token0Address] || { symbol: token0Address.slice(0, 8), decimals: 18 };
+        const token1Info = TOKEN_SYMBOLS[token1Address] || { symbol: token1Address.slice(0, 8), decimals: 18 };
+
+        // Only include positions with liquidity > 0
+        if (Number(posInfo.liquidity) > 0) {
+          positions.push({
+            version: "V4",
+            tokenId: tokenId.toString(),
+            poolId: posInfo.poolId,
+            token0: {
+              address: poolKey.currency0,
+              symbol: token0Info.symbol,
+              decimals: token0Info.decimals,
+            },
+            token1: {
+              address: poolKey.currency1,
+              symbol: token1Info.symbol,
+              decimals: token1Info.decimals,
+            },
+            fee: Number(poolKey.fee),
+            liquidity: posInfo.liquidity.toString(),
+            tickLower: Number(posInfo.tickLower),
+            tickUpper: Number(posInfo.tickUpper),
+            hooks: poolKey.hooks,
+            tokensOwed0: "0", // V4 requires different method to get owed tokens
+            tokensOwed1: "0",
+          });
+        }
+      } catch (posErr: any) {
+        console.warn(`Error fetching V4 position ${i}:`, posErr.message);
+      }
+    }
+
+    return positions;
+  } catch (error: any) {
+    console.error("Uniswap V4 positions fetch error:", error.message);
+    return positions;
+  }
+}
+
 // Endpoint to fetch liquidity pool positions
 router.get(
   "/me/liquidity-positions",
@@ -972,7 +1055,17 @@ router.get(
         return res.json({ positions: [], wallets });
       }
 
-      const positions = await fetchUniswapV3Positions(walletAddress);
+      // Fetch V3 and V4 positions in parallel
+      const [v3Positions, v4Positions] = await Promise.all([
+        fetchUniswapV3Positions(walletAddress),
+        fetchUniswapV4Positions(walletAddress),
+      ]);
+
+      // Combine all positions, adding version tag to V3
+      const positions = [
+        ...v3Positions.map((p) => ({ ...p, version: "V3" })),
+        ...v4Positions,
+      ];
 
       // Fetch current prices for USD value calculation
       const prices = await fetchCurrentPrices();
