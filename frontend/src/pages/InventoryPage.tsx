@@ -401,63 +401,47 @@ export function InventoryPage() {
       .filter((b) => b.venue === venue)
       .reduce((sum, b) => sum + b.usd_value, 0);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
-        <div className="text-slate-400 animate-pulse">Loading inventory...</div>
-      </div>
-    );
-  }
+  // Don't block rendering - show content with loading indicator instead
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       {/* Header */}
       <div className="bg-slate-900 border-b border-slate-700 px-4 py-3">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-xl font-bold">💰 Inventory & Risk</h1>
-          <p className="text-slate-400 text-sm">
-            Balances across venues and exposure limits
-          </p>
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold">💰 Inventory</h1>
+            <p className="text-slate-400 text-sm">Balances across venues</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {loading && (
+              <span className="text-xs text-slate-400 animate-pulse">
+                Refreshing...
+              </span>
+            )}
+            <span className="text-xs text-slate-500">
+              {state.last_update
+                ? `Updated ${new Date(state.last_update).toLocaleTimeString()}`
+                : ""}
+            </span>
+          </div>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-slate-900/50 rounded-xl border border-slate-700 p-4">
-            <div className="text-slate-400 text-sm mb-1">Total Value</div>
-            <div className="text-2xl font-bold font-mono">
-              ${state.total_usd.toLocaleString()}
+        {/* Total Value - Simple */}
+        <div className="bg-slate-900/50 rounded-xl border border-slate-700 p-4 mb-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-slate-400 text-sm mb-1">
+                Total Portfolio Value
+              </div>
+              <div className="text-3xl font-bold font-mono">
+                ${state.total_usd.toLocaleString()}
+              </div>
             </div>
-          </div>
-          <div className="bg-slate-900/50 rounded-xl border border-slate-700 p-4">
-            <div className="text-slate-400 text-sm mb-1">Max Per Trade</div>
-            <div className="text-2xl font-bold font-mono">
-              ${state.exposure.max_per_trade_usd}
-            </div>
-          </div>
-          <div className="bg-slate-900/50 rounded-xl border border-slate-700 p-4">
-            <div className="text-slate-400 text-sm mb-1">Daily Limit</div>
-            <div className="text-2xl font-bold font-mono">
-              ${state.exposure.max_daily_usd}
-            </div>
-          </div>
-          <div className="bg-slate-900/50 rounded-xl border border-slate-700 p-4">
-            <div className="text-slate-400 text-sm mb-1">Used Today</div>
-            <div className="text-2xl font-bold font-mono text-emerald-400">
-              ${state.exposure.used_daily_usd}
-            </div>
-            <div className="mt-1 h-1 bg-slate-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-emerald-500"
-                style={{
-                  width: `${
-                    (state.exposure.used_daily_usd /
-                      state.exposure.max_daily_usd) *
-                    100
-                  }%`,
-                }}
-              />
+            <div className="text-right text-xs text-slate-500">
+              <div>Max trade: ${state.exposure.max_per_trade_usd}</div>
+              <div>Daily limit: ${state.exposure.max_daily_usd}</div>
             </div>
           </div>
         </div>
@@ -495,109 +479,143 @@ export function InventoryPage() {
 
         {/* Venue Balances */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {venues.map((venue) => (
-            <div
-              key={venue}
-              className="bg-slate-900/50 rounded-xl border border-slate-700 overflow-hidden"
-            >
-              <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span>
-                    {venue === "Wallet"
-                      ? "🔐"
-                      : venue === "LBank"
-                      ? "🏦"
-                      : "🏛️"}
-                  </span>
-                  <span className="font-semibold">{venue}</span>
-                </div>
-                <span className="text-sm text-slate-400">
-                  ${getVenueTotal(venue).toLocaleString()}
-                </span>
-              </div>
+          {venues.map((venue) => {
+            // Determine connection status
+            const venueStatus = state.exchange_statuses[venue];
+            const hasBalances = getVenueBalances(venue).length > 0;
+            const isConnected =
+              venue === "Wallet"
+                ? wallet.isConnected || !!state.saved_wallet_address
+                : venueStatus?.connected;
+            const hasError = venueStatus?.error;
 
-              <div className="divide-y divide-slate-700/50">
-                {getVenueBalances(venue).map((balance, idx) => (
-                  <div
-                    key={idx}
-                    className="px-4 py-3 flex items-center justify-between"
-                  >
-                    <div>
-                      <Tooltip text={`View ${balance.asset} on ${venue}`}>
-                        <a
-                          href={getExchangeUrl(venue, balance.asset) || "#"}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-medium hover:text-emerald-400 transition-colors"
-                        >
-                          {balance.asset} ↗
-                        </a>
-                      </Tooltip>
-                      <div className="text-xs text-slate-500">
-                        {balance.locked > 0 &&
-                          `${balance.locked.toLocaleString()} locked`}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <ClickableValue
-                        value={balance.available}
-                        href={getExchangeUrl(venue, balance.asset)}
-                        tooltip={`Available balance: ${balance.available.toLocaleString()} ${
-                          balance.asset
-                        }`}
-                      />
-                      <div className="text-xs text-slate-400">
-                        <ClickableValue
-                          value={balance.usd_value.toFixed(2)}
-                          prefix="$"
-                          tooltip={`USD value based on current market price`}
-                          className="text-slate-400"
-                        />
-                      </div>
-                    </div>
+            return (
+              <div
+                key={venue}
+                className="bg-slate-900/50 rounded-xl border border-slate-700 overflow-hidden"
+              >
+                <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span>
+                      {venue === "Wallet"
+                        ? "🔐"
+                        : venue === "LBank"
+                        ? "🏦"
+                        : "🏛️"}
+                    </span>
+                    <span className="font-semibold">{venue}</span>
+                    {/* Status indicator */}
+                    <span
+                      className={`h-2 w-2 rounded-full ${
+                        hasBalances
+                          ? "bg-emerald-500"
+                          : isConnected
+                          ? "bg-yellow-500"
+                          : hasError
+                          ? "bg-red-500"
+                          : "bg-slate-500"
+                      }`}
+                      title={
+                        hasBalances
+                          ? "Live"
+                          : isConnected
+                          ? "Connected (loading)"
+                          : hasError
+                          ? `Error: ${hasError}`
+                          : "Not connected"
+                      }
+                    ></span>
                   </div>
-                ))}
-                {getVenueBalances(venue).length === 0 && (
-                  <div className="px-4 py-6 text-center text-sm">
-                    {venue === "Wallet" ? (
-                      wallet.isConnected || state.saved_wallet_address ? (
+                  <span className="text-sm font-mono">
+                    ${getVenueTotal(venue).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="divide-y divide-slate-700/50">
+                  {getVenueBalances(venue).map((balance, idx) => (
+                    <div
+                      key={idx}
+                      className="px-4 py-3 flex items-center justify-between"
+                    >
+                      <div>
+                        <Tooltip text={`View ${balance.asset} on ${venue}`}>
+                          <a
+                            href={getExchangeUrl(venue, balance.asset) || "#"}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-medium hover:text-emerald-400 transition-colors"
+                          >
+                            {balance.asset} ↗
+                          </a>
+                        </Tooltip>
+                        <div className="text-xs text-slate-500">
+                          {balance.locked > 0 &&
+                            `${balance.locked.toLocaleString()} locked`}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <ClickableValue
+                          value={balance.available}
+                          href={getExchangeUrl(venue, balance.asset)}
+                          tooltip={`Available balance: ${balance.available.toLocaleString()} ${
+                            balance.asset
+                          }`}
+                        />
+                        <div className="text-xs text-slate-400">
+                          <ClickableValue
+                            value={balance.usd_value.toFixed(2)}
+                            prefix="$"
+                            tooltip={`USD value based on current market price`}
+                            className="text-slate-400"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {getVenueBalances(venue).length === 0 && (
+                    <div className="px-4 py-6 text-center text-sm">
+                      {venue === "Wallet" ? (
+                        wallet.isConnected || state.saved_wallet_address ? (
+                          <div>
+                            <span className="text-emerald-400">
+                              ✓ Connected
+                            </span>
+                            <p className="text-xs text-slate-500 mt-1 font-mono">
+                              {(
+                                wallet.address || state.saved_wallet_address
+                              )?.slice(0, 6)}
+                              ...
+                              {(
+                                wallet.address || state.saved_wallet_address
+                              )?.slice(-4)}
+                            </p>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500">Not connected</span>
+                        )
+                      ) : state.exchange_statuses[venue.toLowerCase()]
+                          ?.connected ? (
                         <div>
                           <span className="text-emerald-400">✓ Connected</span>
-                          <p className="text-xs text-slate-500 mt-1 font-mono">
-                            {(
-                              wallet.address || state.saved_wallet_address
-                            )?.slice(0, 6)}
-                            ...
-                            {(
-                              wallet.address || state.saved_wallet_address
-                            )?.slice(-4)}
-                          </p>
+                          {state.exchange_statuses[venue.toLowerCase()]
+                            ?.error && (
+                            <p className="text-xs text-slate-500 mt-1">
+                              {
+                                state.exchange_statuses[venue.toLowerCase()]
+                                  ?.error
+                              }
+                            </p>
+                          )}
                         </div>
                       ) : (
                         <span className="text-slate-500">Not connected</span>
-                      )
-                    ) : state.exchange_statuses[venue.toLowerCase()]
-                        ?.connected ? (
-                      <div>
-                        <span className="text-emerald-400">✓ Connected</span>
-                        {state.exchange_statuses[venue.toLowerCase()]
-                          ?.error && (
-                          <p className="text-xs text-slate-500 mt-1">
-                            {
-                              state.exchange_statuses[venue.toLowerCase()]
-                                ?.error
-                            }
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-slate-500">Not connected</span>
-                    )}
-                  </div>
-                )}
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Wallet Selector */}
@@ -833,33 +851,6 @@ export function InventoryPage() {
             )}
           </div>
         )}
-
-        {/* Risk Limits */}
-        <div className="mt-6 bg-slate-900/50 rounded-xl border border-slate-700 p-4">
-          <h3 className="font-semibold mb-4">Risk Limits</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-slate-800/50 rounded-lg p-3">
-              <div className="text-slate-400 text-sm">Max Order Size</div>
-              <div className="font-mono text-lg">
-                ${state.exposure.max_per_trade_usd}
-              </div>
-            </div>
-            <div className="bg-slate-800/50 rounded-lg p-3">
-              <div className="text-slate-400 text-sm">Max Daily Volume</div>
-              <div className="font-mono text-lg">
-                ${state.exposure.max_daily_usd}
-              </div>
-            </div>
-            <div className="bg-slate-800/50 rounded-lg p-3">
-              <div className="text-slate-400 text-sm">Min Edge (bps)</div>
-              <div className="font-mono text-lg">50</div>
-            </div>
-            <div className="bg-slate-800/50 rounded-lg p-3">
-              <div className="text-slate-400 text-sm">Max Slippage (bps)</div>
-              <div className="font-mono text-lg">100</div>
-            </div>
-          </div>
-        </div>
 
         {/* Recent Transactions */}
         <div className="mt-6 bg-slate-900/50 rounded-xl border border-slate-700 p-4">
