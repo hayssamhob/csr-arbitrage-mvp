@@ -232,6 +232,10 @@ function App() {
       return Math.floor((now - then) / 1000);
     };
 
+    // Helper to check if status is healthy (backend returns "healthy" or "ok")
+    const isHealthy = (status: string | undefined) =>
+      status === "ok" || status === "healthy";
+
     // LBank (CEX for CSR25) - 30s freshness threshold
     const lbankTs = data?.system_status?.lbank_gateway?.ts;
     const lbankAge = getAge(lbankTs);
@@ -239,10 +243,10 @@ function App() {
     const lbankStatus = data?.system_status?.lbank_gateway?.status;
     const lbankReason = !lbankStatus
       ? "no data"
-      : lbankStatus !== "ok"
+      : !isHealthy(lbankStatus)
       ? data?.system_status?.lbank_gateway?.subscription_errors?.[
           "csr25_usdt"
-        ] || "connection error"
+        ] || "reconnecting..."
       : lbankStale
       ? `stale (${lbankAge}s > ${FRESHNESS.CEX_STALE_SEC}s)`
       : undefined;
@@ -254,8 +258,8 @@ function App() {
     const latokenStatus = data?.system_status?.latoken_gateway?.status;
     const latokenReason = !latokenStatus
       ? "no data"
-      : latokenStatus !== "ok"
-      ? "connection error"
+      : !isHealthy(latokenStatus)
+      ? "reconnecting..."
       : latokenStale
       ? `stale (${latokenAge}s > ${FRESHNESS.CEX_STALE_SEC}s)`
       : undefined;
@@ -281,11 +285,11 @@ function App() {
         name: "LBank",
         status: (!lbankStatus
           ? "offline"
-          : lbankStatus === "ok" && !lbankStale
+          : isHealthy(lbankStatus) && !lbankStale
           ? "ok"
           : lbankStale
           ? "warning"
-          : "error") as ServiceStatus["status"],
+          : "warning") as ServiceStatus["status"],
         lastUpdate: lbankTs || "—",
         ageSeconds: lbankAge < 999 ? lbankAge : undefined,
         isStale: lbankStale,
@@ -295,11 +299,11 @@ function App() {
         name: "LATOKEN",
         status: (!latokenStatus
           ? "offline"
-          : latokenStatus === "ok" && !latokenStale
+          : isHealthy(latokenStatus) && !latokenStale
           ? "ok"
           : latokenStale
           ? "warning"
-          : "error") as ServiceStatus["status"],
+          : "warning") as ServiceStatus["status"],
         lastUpdate: latokenTs || "—",
         ageSeconds: latokenAge < 999 ? latokenAge : undefined,
         isStale: latokenStale,

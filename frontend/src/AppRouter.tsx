@@ -148,11 +148,9 @@ function Navigation() {
           ) : (
             <NavLink
               to="/login"
-              className="flex flex-col items-center px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 rounded-xl shadow-xl shadow-emerald-900/20 transition-all duration-300 active:scale-95"
+              className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 rounded-xl shadow-lg shadow-emerald-900/30 transition-all duration-300 active:scale-95"
             >
-              <span className="text-xs font-black text-white">SIGN IN</span>
-              <div className="w-full h-px bg-white/30 my-1"></div>
-              <span className="text-xs font-black text-white">SIGN UP</span>
+              <span className="text-sm font-bold text-white">Sign In</span>
             </NavLink>
           )}
 
