@@ -46,8 +46,9 @@ export async function requireAuth(
   }
 
   try {
-    const secret = new TextEncoder().encode(SUPABASE_JWT_SECRET);
-    const { payload } = await jose.jwtVerify(token, secret);
+    // Supabase JWT secret is base64 encoded - decode it first
+    const secretBytes = Buffer.from(SUPABASE_JWT_SECRET, "base64");
+    const { payload } = await jose.jwtVerify(token, secretBytes);
 
     // Supabase JWT payload contains 'sub' (user_id) and 'email'
     req.userId = payload.sub as string;
@@ -88,8 +89,9 @@ export async function optionalAuth(
   const token = authHeader.substring(7);
 
   try {
-    const secret = new TextEncoder().encode(SUPABASE_JWT_SECRET);
-    const { payload } = await jose.jwtVerify(token, secret);
+    // Supabase JWT secret is base64 encoded - decode it first
+    const secretBytes = Buffer.from(SUPABASE_JWT_SECRET, "base64");
+    const { payload } = await jose.jwtVerify(token, secretBytes);
 
     req.userId = payload.sub as string;
     req.userEmail = payload.email as string;
