@@ -1479,12 +1479,10 @@ router.get(
 
       const etherscanApiKey = process.env.ETHERSCAN_API_KEY;
       if (!etherscanApiKey) {
-        return res
-          .status(500)
-          .json({
-            error: "Etherscan API key not configured",
-            reason: "missing_api_key",
-          });
+        return res.status(500).json({
+          error: "Etherscan API key not configured",
+          reason: "missing_api_key",
+        });
       }
 
       // Fetch ETH and ERC20 transactions in parallel with retry logic
@@ -1509,12 +1507,13 @@ router.get(
         }
       };
 
+      // Use Etherscan V2 API with chainid=1 for Ethereum mainnet
       const [ethData, tokenData] = await Promise.all([
         fetchWithRetry(
-          `https://api.etherscan.io/api?module=account&action=txlist&address=${wallet}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc&apikey=${etherscanApiKey}`
+          `https://api.etherscan.io/v2/api?chainid=1&module=account&action=txlist&address=${wallet}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc&apikey=${etherscanApiKey}`
         ),
         fetchWithRetry(
-          `https://api.etherscan.io/api?module=account&action=tokentx&address=${wallet}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc&apikey=${etherscanApiKey}`
+          `https://api.etherscan.io/v2/api?chainid=1&module=account&action=tokentx&address=${wallet}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc&apikey=${etherscanApiKey}`
         ),
       ]);
 

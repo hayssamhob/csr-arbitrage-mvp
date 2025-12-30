@@ -7,6 +7,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+// Check if we're in a browser environment
+const canUseDOM = typeof window !== "undefined" && typeof document !== "undefined";
+
 interface TooltipProps {
   content: ReactNode;
   children: ReactNode;
@@ -78,6 +81,7 @@ export function Tooltip({
     >
       {children}
       {isVisible &&
+        canUseDOM &&
         createPortal(
           <div
             ref={tooltipRef}
