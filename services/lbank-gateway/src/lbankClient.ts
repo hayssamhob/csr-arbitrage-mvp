@@ -137,8 +137,10 @@ export class LBankClient extends EventEmitter {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
     for (const symbol of this.symbols) {
-      // Subscribe to ticker
-      // ASSUMPTION: LBank V2 uses 'tick' subscription format
+      // LBank V2 WebSocket subscription format per official docs
+      // https://www.lbank.com/en-US/docs/index.html#websocket-api
+
+      // Subscribe to ticker (kbar channel with 1min for real-time updates)
       const tickerSub = JSON.stringify({
         action: "subscribe",
         subscribe: "tick",
@@ -147,7 +149,7 @@ export class LBankClient extends EventEmitter {
       this.ws.send(tickerSub);
       this.onLog("debug", "subscribe_sent", { channel: "tick", symbol });
 
-      // Subscribe to depth (top 20 levels)
+      // Subscribe to depth
       const depthSub = JSON.stringify({
         action: "subscribe",
         subscribe: "depth",
@@ -156,6 +158,15 @@ export class LBankClient extends EventEmitter {
       });
       this.ws.send(depthSub);
       this.onLog("debug", "subscribe_sent", { channel: "depth", symbol });
+
+      // Also subscribe to trade for real-time price updates
+      const tradeSub = JSON.stringify({
+        action: "subscribe",
+        subscribe: "trade",
+        pair: symbol,
+      });
+      this.ws.send(tradeSub);
+      this.onLog("debug", "subscribe_sent", { channel: "trade", symbol });
     }
   }
 
@@ -294,8 +305,8 @@ export class LBankClient extends EventEmitter {
 
   private sendPong(ping: string): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      // LBank V2 requires action field in all messages
-      this.ws.send(JSON.stringify({ action: "pong", pong: ping }));
+      // LBank V2 pong format - just echo back the ping value
+      this.ws.send(JSON.stringify({ pong: ping }));
       this.onLog("debug", "pong_sent", { ping });
     }
   }
@@ -305,11 +316,8 @@ export class LBankClient extends EventEmitter {
 
     this.pingTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
-        // LBank V2 WebSocket requires both action and ping fields
-        const pingMsg = JSON.stringify({
-          action: "ping",
-          ping: Date.now().toString(),
-        });
+        // LBank V2 WebSocket ping format
+        const pingMsg = JSON.stringify({ ping: Date.now().toString() });
         this.ws.send(pingMsg);
         this.onLog("debug", "ping_sent");
 

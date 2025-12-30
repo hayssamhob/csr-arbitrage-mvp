@@ -1711,4 +1711,121 @@ router.get("/health/uniswap", async (_req, res) => {
   }
 });
 
+// ============================================
+// UNIFIED SYSTEM STATUS (aggregates all services)
+// ============================================
+
+interface ServiceHealthResult {
+  name: string;
+  status: 'ok' | 'degraded' | 'down' | 'unknown';
+  lastCheck: string;
+  lastSuccess: string | null;
+  lastError: string | null;
+  details: Record<string, unknown>;
+}
+
+async function checkServiceHealth(name: string, url: string): Promise<ServiceHealthResult> {
+  const result: ServiceHealthResult = {
+    name,
+    status: 'unknown',
+    lastCheck: new Date().toISOString(),
+    lastSuccess: null,
+    lastError: null,
+    details: {},
+  };
+
+  try {
+    const response = await axios.get(url, { timeout: 5000 });
+    const data = response.data;
+    
+    // Map various status formats
+    if (data.status === 'ok' || data.status === 'healthy') {
+      result.status = 'ok';
+      result.lastSuccess = result.lastCheck;
+    } else if (data.status === 'degraded') {
+      result.status = 'degraded';
+    } else if (data.status === 'unhealthy' || data.status === 'down') {
+      result.status = 'down';
+      result.lastError = data.error || 'Service unhealthy';
+    } else {
+      result.status = 'ok'; // Default if we got a response
+      result.lastSuccess = result.lastCheck;
+    }
+    
+    // Check for staleness (gateway services)
+    if (data.last_message_ts) {
+      const staleness = Date.now() - new Date(data.last_message_ts).getTime();
+      if (staleness > 60000) {
+        result.status = 'down';
+        result.lastError = `Stale data (${Math.round(staleness/1000)}s)`;
+      } else if (staleness > 15000) {
+        result.status = 'degraded';
+      }
+    }
+    
+    // Check connected flag
+    if (data.connected === false) {
+      result.status = 'down';
+      result.lastError = 'Not connected';
+    }
+    
+    result.details = {
+      connected: data.connected,
+      is_stale: data.is_stale,
+      reconnect_count: data.reconnect_count,
+      last_message_ts: data.last_message_ts,
+      errors_last_5m: data.errors_last_5m,
+    };
+    
+  } catch (err: any) {
+    result.status = 'down';
+    result.lastError = err.code === 'ECONNREFUSED' ? 'Connection refused' : err.message;
+  }
+  
+  return result;
+}
+
+router.get("/system/status", async (_req, res) => {
+  const services = [
+    { name: 'lbank-gateway', url: 'http://localhost:3001/ready' },
+    { name: 'latoken-gateway', url: 'http://localhost:3006/ready' },
+    { name: 'strategy', url: 'http://localhost:3003/ready' },
+    { name: 'uniswap-scraper', url: 'http://localhost:3010/health' },
+    { name: 'uniswap-quote-csr', url: 'http://localhost:3004/health' },
+    { name: 'uniswap-quote-csr25', url: 'http://localhost:3005/health' },
+  ];
+  
+  const results = await Promise.all(
+    services.map(s => checkServiceHealth(s.name, s.url))
+  );
+  
+  // Calculate overall status
+  const allOk = results.every(r => r.status === 'ok');
+  const anyDown = results.some(r => r.status === 'down');
+  const overallStatus = anyDown ? 'down' : allOk ? 'ok' : 'degraded';
+  
+  // Check external dependencies
+  const externalDeps: Record<string, ServiceHealthResult> = {};
+  
+  // Supabase check
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      await supabase.from('risk_limits').select('id').limit(1);
+      externalDeps['supabase'] = { name: 'supabase', status: 'ok', lastCheck: new Date().toISOString(), lastSuccess: new Date().toISOString(), lastError: null, details: {} };
+    } catch (err: any) {
+      externalDeps['supabase'] = { name: 'supabase', status: 'down', lastCheck: new Date().toISOString(), lastSuccess: null, lastError: err.message, details: {} };
+    }
+  } else {
+    externalDeps['supabase'] = { name: 'supabase', status: 'down', lastCheck: new Date().toISOString(), lastSuccess: null, lastError: 'Not configured', details: {} };
+  }
+  
+  res.json({
+    status: overallStatus,
+    ts: new Date().toISOString(),
+    services: results,
+    external: externalDeps,
+  });
+});
+
 export default router;

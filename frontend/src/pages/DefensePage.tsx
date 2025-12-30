@@ -8,6 +8,7 @@ import { AlignmentDisplay } from "../components/AlignmentDisplay";
 import { GlobalStatusBar, type ServiceStatus } from "../components/GlobalStatusBar";
 import { QuoteLadder } from "../components/QuoteLadder";
 import { RecentSwaps } from "../components/RecentSwaps";
+import { SystemHealthPanel } from "../components/SystemHealthPanel";
 
 interface TokenPriceData {
   token: string;
@@ -27,8 +28,16 @@ interface DashboardData {
 
 interface HealthData {
   overall_status: string;
-  lbank_gateway?: { status: string; connected: boolean; last_message_ts: string };
-  latoken_gateway?: { status: string; connected: boolean; last_message_ts: string };
+  lbank_gateway?: {
+    status: string;
+    connected: boolean;
+    last_message_ts: string;
+  };
+  latoken_gateway?: {
+    status: string;
+    connected: boolean;
+    last_message_ts: string;
+  };
   uniswap_quote_csr?: { status: string; last_quote_ts: string };
   uniswap_quote_csr25?: { status: string; last_quote_ts: string };
   strategy?: { status: string };
@@ -46,7 +55,12 @@ interface BackendAlignment {
   dex_quote_size_usdt: number | null;
   deviation_pct: number | null;
   band_bps: number;
-  status: "ALIGNED" | "BUY_ON_DEX" | "SELL_ON_DEX" | "NO_ACTION" | "NOT_SUPPORTED_YET";
+  status:
+    | "ALIGNED"
+    | "BUY_ON_DEX"
+    | "SELL_ON_DEX"
+    | "NO_ACTION"
+    | "NOT_SUPPORTED_YET";
   direction: "BUY" | "SELL" | "NONE";
   required_usdt: number | null;
   required_tokens: number | null;
@@ -64,8 +78,12 @@ interface BackendAlignment {
 export function DefensePage() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [health, setHealth] = useState<HealthData | null>(null);
-  const [alignmentCsr, setAlignmentCsr] = useState<BackendAlignment | null>(null);
-  const [alignmentCsr25, setAlignmentCsr25] = useState<BackendAlignment | null>(null);
+  const [alignmentCsr, setAlignmentCsr] = useState<BackendAlignment | null>(
+    null
+  );
+  const [alignmentCsr25, setAlignmentCsr25] = useState<BackendAlignment | null>(
+    null
+  );
   const [priceHistory, setPriceHistory] = useState<{
     csr_usdt: PriceHistoryPoint[];
     csr25_usdt: PriceHistoryPoint[];
@@ -224,6 +242,11 @@ export function DefensePage() {
       />
 
       <div className="max-w-7xl mx-auto px-4 py-4">
+        {/* System Health Panel */}
+        <div className="mb-4">
+          <SystemHealthPanel />
+        </div>
+
         <div className="mb-6">
           <h1 className="text-2xl font-bold">🛡️ DEX Price Defense</h1>
           <p className="text-slate-400 text-sm mt-1">

@@ -560,6 +560,69 @@ app.get("/api/health", (req, res) => {
   res.json(dashboardData.system_status);
 });
 
+// Unified system status - TRUE health for all services
+app.get("/api/system/status", async (req, res) => {
+  const services = [
+    { name: 'lbank-gateway', url: 'http://localhost:3001/ready' },
+    { name: 'latoken-gateway', url: 'http://localhost:3006/ready' },
+    { name: 'strategy', url: 'http://localhost:3003/ready' },
+    { name: 'uniswap-scraper', url: 'http://localhost:3010/health' },
+    { name: 'uniswap-quote-csr25', url: 'http://localhost:3002/health' },
+  ];
+  
+  const results = await Promise.all(services.map(async (svc) => {
+    try {
+      const response = await axios.get(svc.url, { timeout: 5000 });
+      const data = response.data;
+      
+      let status: 'ok' | 'degraded' | 'down' = 'ok';
+      if (data.status === 'unhealthy' || data.status === 'down') status = 'down';
+      else if (data.status === 'degraded') status = 'degraded';
+      
+      // Check staleness
+      if (data.last_message_ts) {
+        const staleness = Date.now() - new Date(data.last_message_ts).getTime();
+        if (staleness > 60000) status = 'down';
+        else if (staleness > 15000) status = 'degraded';
+      }
+      if (data.connected === false) status = 'down';
+      
+      return {
+        name: svc.name,
+        status,
+        lastCheck: new Date().toISOString(),
+        lastSuccess: status === 'ok' ? new Date().toISOString() : null,
+        lastError: status !== 'ok' ? (data.error || 'Service issue') : null,
+        details: {
+          connected: data.connected,
+          is_stale: data.is_stale,
+          reconnect_count: data.reconnect_count,
+          last_message_ts: data.last_message_ts,
+        },
+      };
+    } catch (err: any) {
+      return {
+        name: svc.name,
+        status: 'down' as const,
+        lastCheck: new Date().toISOString(),
+        lastSuccess: null,
+        lastError: err.code === 'ECONNREFUSED' ? 'Connection refused' : err.message,
+        details: {},
+      };
+    }
+  }));
+  
+  const allOk = results.every(r => r.status === 'ok');
+  const anyDown = results.some(r => r.status === 'down');
+  
+  res.json({
+    status: anyDown ? 'down' : allOk ? 'ok' : 'degraded',
+    ts: new Date().toISOString(),
+    services: results,
+    external: { supabase: { name: 'supabase', status: 'ok', lastCheck: new Date().toISOString() } },
+  });
+});
+
 // Orchestrator API: /api/config - sanitized config (no secrets)
 app.get("/api/config", (req, res) => {
   res.json({
