@@ -50,6 +50,21 @@ function getDexUrl(market: string): string {
   return urls[token] || "#";
 }
 
+// Staleness check - abort if data is older than threshold (5 seconds for CEX, 10 for DEX)
+const STALENESS_THRESHOLD_CEX_MS = 5000;
+const STALENESS_THRESHOLD_DEX_MS = 10000;
+
+function isDataStale(ts: string | undefined, thresholdMs: number): boolean {
+  if (!ts) return true;
+  const age = Date.now() - new Date(ts).getTime();
+  return age > thresholdMs;
+}
+
+function getDataAge(ts: string | undefined): number {
+  if (!ts) return 999;
+  return Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+}
+
 // Tooltip component for ArbitragePage
 function Tooltip({
   children,
@@ -719,19 +734,46 @@ export function ArbitragePage() {
               csrDecision?.direction === "buy_dex_sell_cex"
                 ? "BUY_DEX_SELL_CEX"
                 : "BUY_CEX_SELL_DEX",
-            is_actionable: userLimits.loaded
-              ? (csrDecision?.would_trade ??
-                  Math.abs(edgeBps) >= userLimits.min_edge_bps) &&
-                !userLimits.kill_switch
-              : false, // Block if settings not loaded
-            reason: !userLimits.loaded
-              ? "settings_not_loaded"
-              : userLimits.kill_switch
-              ? "kill_switch_active"
-              : csrDecision?.reason ??
+            is_actionable: (() => {
+              // Staleness check - BLOCK if data is stale
+              const cexStale = isDataStale(
+                csrLatoken.ts,
+                STALENESS_THRESHOLD_CEX_MS
+              );
+              const dexStale = isDataStale(
+                csrDex.ts,
+                STALENESS_THRESHOLD_DEX_MS
+              );
+              if (cexStale || dexStale) return false;
+              if (!userLimits.loaded) return false;
+              if (userLimits.kill_switch) return false;
+              return (
+                csrDecision?.would_trade ??
+                Math.abs(edgeBps) >= userLimits.min_edge_bps
+              );
+            })(),
+            reason: (() => {
+              const cexStale = isDataStale(
+                csrLatoken.ts,
+                STALENESS_THRESHOLD_CEX_MS
+              );
+              const dexStale = isDataStale(
+                csrDex.ts,
+                STALENESS_THRESHOLD_DEX_MS
+              );
+              if (cexStale)
+                return `stale_cex_data (${getDataAge(csrLatoken.ts)}s old)`;
+              if (dexStale)
+                return `stale_dex_data (${getDataAge(csrDex.ts)}s old)`;
+              if (!userLimits.loaded) return "settings_not_loaded";
+              if (userLimits.kill_switch) return "kill_switch_active";
+              return (
+                csrDecision?.reason ??
                 (Math.abs(edgeBps) >= userLimits.min_edge_bps
                   ? `Edge ${edgeBps}bps exceeds threshold ${userLimits.min_edge_bps}bps`
-                  : `Edge ${edgeBps}bps below threshold ${userLimits.min_edge_bps}bps`),
+                  : `Edge ${edgeBps}bps below threshold ${userLimits.min_edge_bps}bps`)
+              );
+            })(),
           });
         }
 
@@ -797,19 +839,46 @@ export function ArbitragePage() {
               csr25Decision?.direction === "buy_dex_sell_cex"
                 ? "BUY_DEX_SELL_CEX"
                 : "BUY_CEX_SELL_DEX",
-            is_actionable: userLimits.loaded
-              ? (csr25Decision?.would_trade ??
-                  Math.abs(edgeBps) >= userLimits.min_edge_bps) &&
-                !userLimits.kill_switch
-              : false, // Block if settings not loaded
-            reason: !userLimits.loaded
-              ? "settings_not_loaded"
-              : userLimits.kill_switch
-              ? "kill_switch_active"
-              : csr25Decision?.reason ??
+            is_actionable: (() => {
+              // Staleness check - BLOCK if data is stale
+              const cexStale = isDataStale(
+                csr25Lbank.ts,
+                STALENESS_THRESHOLD_CEX_MS
+              );
+              const dexStale = isDataStale(
+                csr25Dex.ts,
+                STALENESS_THRESHOLD_DEX_MS
+              );
+              if (cexStale || dexStale) return false;
+              if (!userLimits.loaded) return false;
+              if (userLimits.kill_switch) return false;
+              return (
+                csr25Decision?.would_trade ??
+                Math.abs(edgeBps) >= userLimits.min_edge_bps
+              );
+            })(),
+            reason: (() => {
+              const cexStale = isDataStale(
+                csr25Lbank.ts,
+                STALENESS_THRESHOLD_CEX_MS
+              );
+              const dexStale = isDataStale(
+                csr25Dex.ts,
+                STALENESS_THRESHOLD_DEX_MS
+              );
+              if (cexStale)
+                return `stale_cex_data (${getDataAge(csr25Lbank.ts)}s old)`;
+              if (dexStale)
+                return `stale_dex_data (${getDataAge(csr25Dex.ts)}s old)`;
+              if (!userLimits.loaded) return "settings_not_loaded";
+              if (userLimits.kill_switch) return "kill_switch_active";
+              return (
+                csr25Decision?.reason ??
                 (Math.abs(edgeBps) >= userLimits.min_edge_bps
                   ? `Edge ${edgeBps}bps exceeds threshold ${userLimits.min_edge_bps}bps`
-                  : `Edge ${edgeBps}bps below threshold ${userLimits.min_edge_bps}bps`),
+                  : `Edge ${edgeBps}bps below threshold ${userLimits.min_edge_bps}bps`)
+              );
+            })(),
           });
         }
 

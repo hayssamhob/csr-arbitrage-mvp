@@ -63,20 +63,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signInWithEmail = async (email: string) => {
+    console.log(
+      "[Auth] Sending magic link to:",
+      email,
+      "redirect:",
+      REDIRECT_URL
+    );
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
         emailRedirectTo: REDIRECT_URL,
       },
     });
+    if (error) {
+      console.error("[Auth] Magic link error:", error.message, error);
+    } else {
+      console.log("[Auth] Magic link sent successfully");
+    }
     return { error: error as Error | null };
   };
 
   const signInWithPassword = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+    console.log("[Auth] Attempting password sign-in for:", email);
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
+    if (error) {
+      console.error("[Auth] Sign-in error:", error.message, error);
+    } else {
+      console.log("[Auth] Sign-in success, user:", data.user?.email);
+    }
     return { error: error as Error | null };
   };
 

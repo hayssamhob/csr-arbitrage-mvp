@@ -4,25 +4,66 @@
 
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext";
+import { supabase } from "../lib/supabase";
 
 export function ResetPasswordPage() {
-  const { user, loading, signInWithPassword } = useAuth();
   const navigate = useNavigate();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
 
-  // If already logged in, redirect to dashboard
+  // Check if this is a password recovery session
   useEffect(() => {
-    if (!loading && user) {
-      navigate("/alignment");
-    }
-  }, [user, loading, navigate]);
+    const checkRecoverySession = async () => {
+      // Check URL hash for recovery token
+      const hash = window.location.hash;
+      const isRecovery =
+        hash.includes("type=recovery") || hash.includes("type=signup");
+
+      if (isRecovery) {
+        console.log("[ResetPassword] Recovery mode detected");
+        setIsRecoveryMode(true);
+        setLoading(false);
+        return;
+      }
+
+      // Check if user has an active session
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session) {
+        // Check if this session came from a recovery flow
+        // If not, redirect to alignment
+        console.log("[ResetPassword] Session exists, checking type");
+        // For now, if they landed here with a session, let them reset
+        setIsRecoveryMode(true);
+      }
+
+      setLoading(false);
+    };
+
+    // Listen for auth state changes (recovery token processed)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, _session) => {
+      console.log("[ResetPassword] Auth event:", event);
+      if (event === "PASSWORD_RECOVERY") {
+        setIsRecoveryMode(true);
+        setLoading(false);
+      }
+    });
+
+    checkRecoverySession();
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +71,10 @@ export function ResetPasswordPage() {
     setMessage(null);
 
     if (password.length < 6) {
-      setMessage({ type: "error", text: "Password must be at least 6 characters" });
+      setMessage({
+        type: "error",
+        text: "Password must be at least 6 characters",
+      });
       setIsSubmitting(false);
       return;
     }
@@ -41,17 +85,19 @@ export function ResetPasswordPage() {
       return;
     }
 
-    // The token is in the URL as #access_token=...&refresh_token=...&type=recovery
-    // Supabase will handle this automatically when we update the password
-    const { error } = await signInWithPassword("", password);
+    // Use updateUser to set the new password
+    const { error } = await supabase.auth.updateUser({ password });
 
     if (error) {
+      console.error("[ResetPassword] Error:", error);
       setMessage({ type: "error", text: error.message });
     } else {
       setMessage({
         type: "success",
-        text: "Password reset successful! You can now sign in with your new password.",
+        text: "Password reset successful! Redirecting to sign in...",
       });
+      // Sign out after password reset so they can sign in fresh
+      await supabase.auth.signOut();
       setTimeout(() => {
         navigate("/login");
       }, 2000);
@@ -63,7 +109,35 @@ export function ResetPasswordPage() {
   if (loading) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center">
-        <div className="text-slate-400 animate-pulse">Loading...</div>
+        <div className="text-slate-400 animate-pulse">
+          Processing reset link...
+        </div>
+      </div>
+    );
+  }
+
+  // If not in recovery mode, show error and redirect option
+  if (!isRecoveryMode) {
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center px-4">
+        <div className="w-full max-w-md">
+          <div className="bg-slate-900/80 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-8 shadow-xl text-center">
+            <div className="text-amber-400 text-4xl mb-4">⚠️</div>
+            <h1 className="text-xl font-bold text-white mb-4">
+              Invalid Reset Link
+            </h1>
+            <p className="text-slate-400 mb-6">
+              This password reset link is invalid or has expired. Please request
+              a new one.
+            </p>
+            <button
+              onClick={() => navigate("/login")}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-semibold transition-colors"
+            >
+              Go to Login
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
