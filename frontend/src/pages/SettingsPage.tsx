@@ -39,14 +39,9 @@ interface Wallet {
 export function SettingsPage() {
   const { user, getAccessToken } = useAuth();
 
-  // Risk Limits
-  const [riskLimits, setRiskLimits] = useState<RiskLimits>({
-    max_order_usdt: 1000,
-    daily_limit_usdt: 10000,
-    min_edge_bps: 50,
-    max_slippage_bps: 100,
-    kill_switch: true,
-  });
+  // Risk Limits - NO DEFAULTS, must load from DB
+  const [riskLimits, setRiskLimits] = useState<RiskLimits | null>(null);
+  const [limitsLoading, setLimitsLoading] = useState(true);
   const [savingLimits, setSavingLimits] = useState(false);
 
   // Exchange Credentials
@@ -88,6 +83,7 @@ export function SettingsPage() {
   };
 
   const fetchRiskLimits = async () => {
+    setLimitsLoading(true);
     try {
       const res = await fetch(`${API_URL}/api/me/risk-limits`, {
         headers: await authHeaders(),
@@ -98,6 +94,8 @@ export function SettingsPage() {
       }
     } catch (err) {
       console.error("Failed to fetch risk limits:", err);
+    } finally {
+      setLimitsLoading(false);
     }
   };
 
@@ -490,97 +488,132 @@ export function SettingsPage() {
         {/* Risk Limits */}
         <div className="bg-slate-900/50 rounded-xl border border-slate-700 p-4">
           <h3 className="font-semibold mb-4">⚠️ Risk Limits</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">
-                Max Order (USDT)
-              </label>
-              <input
-                type="number"
-                value={riskLimits.max_order_usdt}
-                onChange={(e) =>
-                  setRiskLimits((s) => ({
-                    ...s,
-                    max_order_usdt: +e.target.value,
-                  }))
-                }
-                className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2"
-              />
+          {limitsLoading ? (
+            <div className="text-center py-8">
+              <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
+              <p className="text-sm text-slate-400">Loading settings...</p>
             </div>
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">
-                Daily Limit (USDT)
-              </label>
-              <input
-                type="number"
-                value={riskLimits.daily_limit_usdt}
-                onChange={(e) =>
-                  setRiskLimits((s) => ({
-                    ...s,
-                    daily_limit_usdt: +e.target.value,
-                  }))
-                }
-                className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2"
-              />
+          ) : !riskLimits ? (
+            <div className="text-center py-8 text-red-400">
+              <p>Failed to load settings. Please refresh.</p>
             </div>
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">
-                Min Edge (bps)
-              </label>
-              <input
-                type="number"
-                value={riskLimits.min_edge_bps}
-                onChange={(e) =>
-                  setRiskLimits((s) => ({
-                    ...s,
-                    min_edge_bps: +e.target.value,
-                  }))
-                }
-                className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">
-                Max Slippage (bps)
-              </label>
-              <input
-                type="number"
-                value={riskLimits.max_slippage_bps}
-                onChange={(e) =>
-                  setRiskLimits((s) => ({
-                    ...s,
-                    max_slippage_bps: +e.target.value,
-                  }))
-                }
-                className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2"
-              />
-            </div>
-          </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">
+                    Max Order (USDT)
+                  </label>
+                  <input
+                    type="number"
+                    value={riskLimits.max_order_usdt}
+                    onChange={(e) =>
+                      setRiskLimits((s) =>
+                        s
+                          ? {
+                              ...s,
+                              max_order_usdt: +e.target.value,
+                            }
+                          : s
+                      )
+                    }
+                    className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">
+                    Daily Limit (USDT)
+                  </label>
+                  <input
+                    type="number"
+                    value={riskLimits.daily_limit_usdt}
+                    onChange={(e) =>
+                      setRiskLimits((s) =>
+                        s
+                          ? {
+                              ...s,
+                              daily_limit_usdt: +e.target.value,
+                            }
+                          : s
+                      )
+                    }
+                    className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">
+                    Min Edge (bps)
+                  </label>
+                  <input
+                    type="number"
+                    value={riskLimits.min_edge_bps}
+                    onChange={(e) =>
+                      setRiskLimits((s) =>
+                        s
+                          ? {
+                              ...s,
+                              min_edge_bps: +e.target.value,
+                            }
+                          : s
+                      )
+                    }
+                    className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">
+                    Max Slippage (bps)
+                  </label>
+                  <input
+                    type="number"
+                    value={riskLimits.max_slippage_bps}
+                    onChange={(e) =>
+                      setRiskLimits((s) =>
+                        s
+                          ? {
+                              ...s,
+                              max_slippage_bps: +e.target.value,
+                            }
+                          : s
+                      )
+                    }
+                    className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2"
+                  />
+                </div>
+              </div>
 
-          <div className="mt-4 flex items-center gap-3">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={riskLimits.kill_switch}
-                onChange={(e) =>
-                  setRiskLimits((s) => ({
-                    ...s,
-                    kill_switch: e.target.checked,
-                  }))
-                }
-                className="w-4 h-4 rounded"
-              />
-              <span className="text-sm">Kill Switch (halt all trading)</span>
-            </label>
-          </div>
+              <div className="mt-4 flex items-center gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={riskLimits.kill_switch}
+                    onChange={(e) =>
+                      setRiskLimits((s) =>
+                        s
+                          ? {
+                              ...s,
+                              kill_switch: e.target.checked,
+                            }
+                          : s
+                      )
+                    }
+                    className="w-4 h-4 rounded"
+                  />
+                  <span className="text-sm">
+                    Kill Switch (halt all trading)
+                  </span>
+                </label>
+              </div>
 
-          <button
-            onClick={saveRiskLimits}
-            disabled={savingLimits}
-            className="mt-4 w-full py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-500 disabled:opacity-50"
-          >
-            {savingLimits ? "Saving..." : "Save Risk Limits"}
-          </button>
+              <button
+                onClick={saveRiskLimits}
+                disabled={savingLimits}
+                className="mt-4 w-full py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-500 disabled:opacity-50"
+              >
+                {savingLimits ? "Saving..." : "Save Risk Limits"}
+              </button>
+            </>
+          )}
         </div>
       </div>
       <Footer />

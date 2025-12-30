@@ -15,14 +15,24 @@
 import { useEffect, useState } from "react";
 import { AdvancedMetricsCard } from "../components/AdvancedMetricsCard";
 import { Footer } from "../components/Footer";
+import { useAuth } from "../contexts/AuthContext";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.PROD ? "" : "http://localhost:8001");
 
+// User risk limits from Supabase - NO HARDCODED DEFAULTS
+interface UserRiskLimits {
+  min_edge_bps: number;
+  max_order_usdt: number;
+  max_slippage_bps: number;
+  kill_switch: boolean;
+  loaded: boolean; // True only when fetched from DB
+}
+
 // Helper to get exchange URL for a market
 function getExchangeUrl(venue: string, market: string): string {
-  const token = market.split('/')[0];
+  const token = market.split("/")[0];
   const urls: Record<string, Record<string, string>> = {
     LATOKEN: { CSR: "https://latoken.com/exchange/CSR_USDT" },
     LBank: { CSR25: "https://www.lbank.com/trade/csr25_usdt/" },
@@ -31,16 +41,23 @@ function getExchangeUrl(venue: string, market: string): string {
 }
 
 function getDexUrl(market: string): string {
-  const token = market.split('/')[0];
+  const token = market.split("/")[0];
   const urls: Record<string, string> = {
     CSR: "https://app.uniswap.org/swap?inputCurrency=0xdac17f958d2ee523a2206206994597c13d831ec7&outputCurrency=0x6bba316c48b49bd1eac44573c5c871ff02958469",
-    CSR25: "https://app.uniswap.org/swap?inputCurrency=0xdac17f958d2ee523a2206206994597c13d831ec7&outputCurrency=0x0f5c78f152152dda52a2ea45b0a8c10733010748",
+    CSR25:
+      "https://app.uniswap.org/swap?inputCurrency=0xdac17f958d2ee523a2206206994597c13d831ec7&outputCurrency=0x0f5c78f152152dda52a2ea45b0a8c10733010748",
   };
   return urls[token] || "#";
 }
 
 // Tooltip component for ArbitragePage
-function Tooltip({ children, text }: { children: React.ReactNode; text: string }) {
+function Tooltip({
+  children,
+  text,
+}: {
+  children: React.ReactNode;
+  text: string;
+}) {
   return (
     <div className="group relative inline-block">
       {children}
@@ -53,14 +70,14 @@ function Tooltip({ children, text }: { children: React.ReactNode; text: string }
 }
 
 // Clickable price component
-function ClickablePrice({ 
-  price, 
-  href, 
+function ClickablePrice({
+  price,
+  href,
   className = "",
   tooltip,
-}: { 
-  price: number; 
-  href?: string; 
+}: {
+  price: number;
+  href?: string;
   className?: string;
   tooltip?: string;
 }) {
@@ -72,23 +89,37 @@ function ClickablePrice({
   };
 
   const content = (
-    <span className={`font-mono ${className} ${href ? "hover:text-emerald-400 cursor-pointer underline decoration-dotted underline-offset-2" : ""}`}>
+    <span
+      className={`font-mono ${className} ${
+        href
+          ? "hover:text-emerald-400 cursor-pointer underline decoration-dotted underline-offset-2"
+          : ""
+      }`}
+    >
       ${formatPrice(price)}
     </span>
   );
-  
-  const wrapped = tooltip ? <Tooltip text={tooltip}>{content}</Tooltip> : content;
-  
+
+  const wrapped = tooltip ? (
+    <Tooltip text={tooltip}>{content}</Tooltip>
+  ) : (
+    content
+  );
+
   if (href) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className="inline-block">
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-block"
+      >
         {wrapped}
       </a>
     );
   }
   return wrapped;
 }
-
 
 // Trade Execution Modal with Amount Selection and Price Impact Preview
 function TradeExecutionModal({
@@ -541,6 +572,17 @@ export function ArbitragePage() {
     null
   );
 
+  // User risk limits - MUST be loaded before any decisions are made
+  const [userLimits, setUserLimits] = useState<UserRiskLimits>({
+    min_edge_bps: 0,
+    max_order_usdt: 0,
+    max_slippage_bps: 0,
+    kill_switch: true,
+    loaded: false, // NOT LOADED = block all actions
+  });
+  const [_limitsError, setLimitsError] = useState<string | null>(null);
+  const { getAccessToken } = useAuth();
+
   // Helper to get available balance for a venue/asset
   const getAvailableBalance = (venue: string, asset: string): number => {
     if (!userInventory) return 0;
@@ -574,6 +616,38 @@ export function ArbitragePage() {
       return Math.min(cexUsdt, walletTokenValue, opp.max_safe_size);
     }
   };
+
+  // Fetch user risk limits FIRST - REQUIRED before any decisions
+  useEffect(() => {
+    const fetchLimits = async () => {
+      try {
+        const token = await getAccessToken();
+        if (!token) {
+          setLimitsError("Not authenticated - using blocked mode");
+          return;
+        }
+        const res = await fetch(`${API_URL}/api/me/risk-limits`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setUserLimits({
+            min_edge_bps: data.min_edge_bps,
+            max_order_usdt: data.max_order_usdt,
+            max_slippage_bps: data.max_slippage_bps,
+            kill_switch: data.kill_switch,
+            loaded: true,
+          });
+          setLimitsError(null);
+        } else {
+          setLimitsError("settings_not_loaded: Failed to fetch risk limits");
+        }
+      } catch (err) {
+        setLimitsError("settings_not_loaded: Network error");
+      }
+    };
+    fetchLimits();
+  }, [getAccessToken]);
 
   // Fetch real data from dashboard API
   useEffect(() => {
@@ -645,12 +719,19 @@ export function ArbitragePage() {
               csrDecision?.direction === "buy_dex_sell_cex"
                 ? "BUY_DEX_SELL_CEX"
                 : "BUY_CEX_SELL_DEX",
-            is_actionable: csrDecision?.would_trade ?? Math.abs(edgeBps) > 50,
-            reason:
-              csrDecision?.reason ??
-              (Math.abs(edgeBps) > 50
-                ? "Edge exceeds threshold"
-                : "Edge below threshold"),
+            is_actionable: userLimits.loaded
+              ? (csrDecision?.would_trade ??
+                  Math.abs(edgeBps) >= userLimits.min_edge_bps) &&
+                !userLimits.kill_switch
+              : false, // Block if settings not loaded
+            reason: !userLimits.loaded
+              ? "settings_not_loaded"
+              : userLimits.kill_switch
+              ? "kill_switch_active"
+              : csrDecision?.reason ??
+                (Math.abs(edgeBps) >= userLimits.min_edge_bps
+                  ? `Edge ${edgeBps}bps exceeds threshold ${userLimits.min_edge_bps}bps`
+                  : `Edge ${edgeBps}bps below threshold ${userLimits.min_edge_bps}bps`),
           });
         }
 
@@ -716,12 +797,19 @@ export function ArbitragePage() {
               csr25Decision?.direction === "buy_dex_sell_cex"
                 ? "BUY_DEX_SELL_CEX"
                 : "BUY_CEX_SELL_DEX",
-            is_actionable: csr25Decision?.would_trade ?? Math.abs(edgeBps) > 50,
-            reason:
-              csr25Decision?.reason ??
-              (Math.abs(edgeBps) > 50
-                ? "Edge exceeds threshold"
-                : "Edge below threshold"),
+            is_actionable: userLimits.loaded
+              ? (csr25Decision?.would_trade ??
+                  Math.abs(edgeBps) >= userLimits.min_edge_bps) &&
+                !userLimits.kill_switch
+              : false, // Block if settings not loaded
+            reason: !userLimits.loaded
+              ? "settings_not_loaded"
+              : userLimits.kill_switch
+              ? "kill_switch_active"
+              : csr25Decision?.reason ??
+                (Math.abs(edgeBps) >= userLimits.min_edge_bps
+                  ? `Edge ${edgeBps}bps exceeds threshold ${userLimits.min_edge_bps}bps`
+                  : `Edge ${edgeBps}bps below threshold ${userLimits.min_edge_bps}bps`),
           });
         }
 

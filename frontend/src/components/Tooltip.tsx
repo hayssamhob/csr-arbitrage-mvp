@@ -36,7 +36,7 @@ export function Tooltip({
       {children}
       {isVisible && (
         <div
-          className={`absolute z-[100] px-3 py-2 text-xs text-white bg-slate-900 border border-slate-600 rounded-lg shadow-2xl ${positionClasses[position]}`}
+          className={`absolute z-[9999] px-3 py-2 text-xs text-white bg-slate-900 border border-slate-600 rounded-lg shadow-2xl ${positionClasses[position]}`}
           style={{ maxWidth, minWidth: "200px" }}
         >
           {content}

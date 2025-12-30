@@ -113,16 +113,33 @@ router.get(
       return res.status(500).json({ error: error.message });
     }
 
-    // Return defaults if no record exists
-    res.json(
-      data || {
+    // If no record exists, create default settings for user (persisted, not hardcoded)
+    if (!data) {
+      const defaultSettings = {
+        user_id: req.userId,
         max_order_usdt: 1000,
         daily_limit_usdt: 10000,
-        min_edge_bps: 50,
+        min_edge_bps: 50, // Initial default, but now PERSISTED in DB
         max_slippage_bps: 100,
         kill_switch: true,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: newData, error: insertError } = await supabase
+        .from("risk_limits")
+        .upsert(defaultSettings)
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error("Failed to create default risk limits:", insertError);
+        return res.status(500).json({ error: "Failed to initialize settings" });
       }
-    );
+
+      return res.json(newData);
+    }
+
+    res.json(data);
   }
 );
 
