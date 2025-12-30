@@ -326,69 +326,50 @@ export function InventoryPage() {
     }
   };
 
+  const [txError, setTxError] = useState<string | null>(null);
+
   const fetchRecentTransactions = async (address: string) => {
     setLoadingTxs(true);
+    setTxError(null);
     try {
-      // Fetch both ETH transactions and ERC20 token transfers
-      const [ethResponse, tokenResponse] = await Promise.all([
-        fetch(
-          `https://api.etherscan.io/api?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&page=1&offset=10&sort=desc`
-        ),
-        fetch(
-          `https://api.etherscan.io/api?module=account&action=tokentx&address=${address}&startblock=0&endblock=99999999&page=1&offset=10&sort=desc`
-        ),
-      ]);
-
-      const ethData = await ethResponse.json();
-      const tokenData = await tokenResponse.json();
-
-      const allTxs: RecentTransaction[] = [];
-
-      // Process ETH transactions
-      if (ethData.status === "1" && Array.isArray(ethData.result)) {
-        ethData.result.slice(0, 5).forEach((tx: any) => {
-          if (parseFloat(tx.value) > 0) {
-            allTxs.push({
-              hash: tx.hash,
-              type:
-                tx.from.toLowerCase() === address.toLowerCase()
-                  ? "transfer"
-                  : "receive",
-              amount: (parseFloat(tx.value) / 1e18).toFixed(4),
-              token: "ETH",
-              timestamp: new Date(parseInt(tx.timeStamp) * 1000).toISOString(),
-              status: tx.txreceipt_status === "1" ? "confirmed" : "pending",
-            });
-          }
-        });
-      }
-
-      // Process ERC20 token transfers
-      if (tokenData.status === "1" && Array.isArray(tokenData.result)) {
-        tokenData.result.slice(0, 10).forEach((tx: any) => {
-          const decimals = parseInt(tx.tokenDecimal) || 18;
-          allTxs.push({
-            hash: tx.hash,
-            type:
-              tx.from.toLowerCase() === address.toLowerCase()
-                ? "transfer"
-                : "receive",
-            amount: (parseFloat(tx.value) / Math.pow(10, decimals)).toFixed(4),
-            token: tx.tokenSymbol || "TOKEN",
-            timestamp: new Date(parseInt(tx.timeStamp) * 1000).toISOString(),
-            status: "confirmed",
-          });
-        });
-      }
-
-      // Sort by timestamp and take top 10
-      allTxs.sort(
-        (a, b) =>
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      // Use backend endpoint (server-side Etherscan with caching)
+      const token = await getAccessToken();
+      const response = await fetch(
+        `${API_URL}/api/me/transactions?wallet=${address}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
       );
-      setRecentTxs(allTxs.slice(0, 10));
-    } catch (err) {
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.transactions && Array.isArray(data.transactions)) {
+        const txs: RecentTransaction[] = data.transactions.map((tx: any) => ({
+          hash: tx.hash,
+          type:
+            tx.kind === "SEND"
+              ? "transfer"
+              : tx.kind === "RECEIVE"
+              ? "receive"
+              : "swap",
+          amount: tx.amount,
+          token: tx.asset,
+          timestamp: tx.timestamp,
+          status: tx.status,
+        }));
+        setRecentTxs(txs);
+      } else {
+        setRecentTxs([]);
+      }
+    } catch (err: any) {
       console.error("Failed to fetch transactions:", err);
+      setTxError(err.message || "Failed to load transactions");
+      setRecentTxs([]);
     }
     setLoadingTxs(false);
   };
@@ -907,7 +888,20 @@ export function InventoryPage() {
           <h3 className="font-semibold mb-4">Recent Transactions</h3>
           {loadingTxs ? (
             <div className="text-center text-slate-500 py-4">
-              Loading transactions...
+              <div className="animate-pulse">Loading transactions...</div>
+            </div>
+          ) : txError ? (
+            <div className="text-center py-4">
+              <div className="text-red-400 mb-2">⚠️ {txError}</div>
+              <button
+                onClick={() => {
+                  const addr = wallet.address || state.saved_wallet_address;
+                  if (addr) fetchRecentTransactions(addr);
+                }}
+                className="text-sm text-blue-400 hover:text-blue-300"
+              >
+                Retry
+              </button>
             </div>
           ) : recentTxs.length > 0 ? (
             <div className="space-y-2">

@@ -1431,4 +1431,284 @@ router.get(
   }
 );
 
+// ============================================
+// TRANSACTION HISTORY (SERVER-SIDE ETHERSCAN)
+// ============================================
+
+// Cache for Etherscan responses (30 second TTL)
+const txCache: Map<string, { data: any; timestamp: number }> = new Map();
+const TX_CACHE_TTL_MS = 30000;
+
+// Get wallet transactions via server-side Etherscan API
+router.get(
+  "/me/transactions",
+  requireAuth,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const wallet = req.query.wallet as string;
+      if (!wallet || !/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
+        return res.status(400).json({ error: "Invalid wallet address" });
+      }
+
+      const cacheKey = `tx:${wallet.toLowerCase()}`;
+      const cached = txCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < TX_CACHE_TTL_MS) {
+        return res.json({ transactions: cached.data, source: "cache", cache_age_ms: Date.now() - cached.timestamp });
+      }
+
+      const etherscanApiKey = process.env.ETHERSCAN_API_KEY;
+      if (!etherscanApiKey) {
+        return res.status(500).json({ error: "Etherscan API key not configured", reason: "missing_api_key" });
+      }
+
+      // Fetch ETH and ERC20 transactions in parallel with retry logic
+      const fetchWithRetry = async (url: string, retries = 3): Promise<any> => {
+        for (let i = 0; i < retries; i++) {
+          try {
+            const response = await axios.get(url, { timeout: 10000 });
+            if (response.data.status === "0" && response.data.message === "NOTOK") {
+              if (response.data.result?.includes("rate limit")) {
+                await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+                continue;
+              }
+            }
+            return response.data;
+          } catch (err: any) {
+            if (i === retries - 1) throw err;
+            await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+          }
+        }
+      };
+
+      const [ethData, tokenData] = await Promise.all([
+        fetchWithRetry(`https://api.etherscan.io/api?module=account&action=txlist&address=${wallet}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc&apikey=${etherscanApiKey}`),
+        fetchWithRetry(`https://api.etherscan.io/api?module=account&action=tokentx&address=${wallet}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc&apikey=${etherscanApiKey}`)
+      ]);
+
+      const transactions: any[] = [];
+
+      // Process ETH transactions
+      if (ethData?.status === "1" && Array.isArray(ethData.result)) {
+        ethData.result.forEach((tx: any) => {
+          if (parseFloat(tx.value) > 0) {
+            const isSend = tx.from.toLowerCase() === wallet.toLowerCase();
+            transactions.push({
+              hash: tx.hash,
+              kind: isSend ? "SEND" : "RECEIVE",
+              asset: "ETH",
+              amount: (parseFloat(tx.value) / 1e18).toFixed(6),
+              timestamp: new Date(parseInt(tx.timeStamp) * 1000).toISOString(),
+              status: tx.txreceipt_status === "1" ? "confirmed" : "failed",
+              explorer_url: `https://etherscan.io/tx/${tx.hash}`,
+              from: tx.from,
+              to: tx.to,
+            });
+          }
+        });
+      }
+
+      // Process ERC20 token transactions
+      if (tokenData?.status === "1" && Array.isArray(tokenData.result)) {
+        tokenData.result.forEach((tx: any) => {
+          const decimals = parseInt(tx.tokenDecimal) || 18;
+          const isSend = tx.from.toLowerCase() === wallet.toLowerCase();
+          // Detect swaps (same tx hash appears twice with different tokens)
+          const isSwap = transactions.some(t => t.hash === tx.hash && t.asset !== tx.tokenSymbol);
+          transactions.push({
+            hash: tx.hash,
+            kind: isSwap ? "SWAP" : (isSend ? "SEND" : "RECEIVE"),
+            asset: tx.tokenSymbol || "TOKEN",
+            amount: (parseFloat(tx.value) / Math.pow(10, decimals)).toFixed(6),
+            timestamp: new Date(parseInt(tx.timeStamp) * 1000).toISOString(),
+            status: "confirmed",
+            explorer_url: `https://etherscan.io/tx/${tx.hash}`,
+            from: tx.from,
+            to: tx.to,
+            contract_address: tx.contractAddress,
+          });
+        });
+      }
+
+      // Sort by timestamp and dedupe
+      transactions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      const uniqueTxs = transactions.slice(0, 20);
+
+      // Cache the result
+      txCache.set(cacheKey, { data: uniqueTxs, timestamp: Date.now() });
+
+      res.json({ 
+        transactions: uniqueTxs, 
+        source: "etherscan",
+        fetched_at: new Date().toISOString()
+      });
+    } catch (error: any) {
+      console.error("Transaction fetch error:", error.message);
+      const reason = error.code === "ECONNABORTED" ? "timeout" 
+        : error.response?.status === 429 ? "rate_limited"
+        : "api_error";
+      res.status(500).json({ error: error.message, reason });
+    }
+  }
+);
+
+// ============================================
+// MARKET SNAPSHOTS (Price Deviation History)
+// ============================================
+
+// Store a market snapshot
+router.post(
+  "/me/market-snapshot",
+  requireAuth,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const supabase = getSupabase();
+      if (!supabase) {
+        return res.status(500).json({ error: "Database not configured" });
+      }
+
+      const { market, cex_bid, cex_ask, dex_price, edge_bps, cost_bps, edge_after_cost_bps } = req.body;
+
+      if (!market || cex_bid === undefined || dex_price === undefined) {
+        return res.status(400).json({ error: "Missing required fields: market, cex_bid, dex_price" });
+      }
+
+      const { error } = await supabase.from("market_snapshots").insert({
+        user_id: req.userId,
+        market,
+        cex_bid,
+        cex_ask,
+        dex_price,
+        edge_bps,
+        cost_bps,
+        edge_after_cost_bps,
+        timestamp: new Date().toISOString(),
+      });
+
+      if (error) throw error;
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Market snapshot error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+// Get market snapshots (Last N for history chart)
+router.get(
+  "/me/market-snapshots",
+  requireAuth,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const supabase = getSupabase();
+      if (!supabase) {
+        return res.status(500).json({ error: "Database not configured" });
+      }
+
+      const market = req.query.market as string;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      let query = supabase
+        .from("market_snapshots")
+        .select("*")
+        .eq("user_id", req.userId)
+        .order("timestamp", { ascending: false })
+        .limit(limit);
+
+      if (market) {
+        query = query.eq("market", market);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      res.json({ snapshots: data || [] });
+    } catch (error: any) {
+      console.error("Get snapshots error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+// ============================================
+// HEALTH ENDPOINTS (per service)
+// ============================================
+
+router.get("/health/etherscan", async (_req, res) => {
+  const apiKey = process.env.ETHERSCAN_API_KEY;
+  if (!apiKey) {
+    return res.json({ status: "error", reason: "missing_api_key" });
+  }
+  try {
+    const response = await axios.get(
+      `https://api.etherscan.io/api?module=stats&action=ethprice&apikey=${apiKey}`,
+      { timeout: 5000 }
+    );
+    if (response.data.status === "1") {
+      res.json({ status: "connected", last_check: new Date().toISOString() });
+    } else {
+      res.json({ status: "error", reason: response.data.message || "bad_response" });
+    }
+  } catch (error: any) {
+    res.json({ status: "error", reason: error.code === "ECONNABORTED" ? "timeout" : "connection_failed" });
+  }
+});
+
+router.get("/health/lbank", async (_req, res) => {
+  try {
+    const response = await axios.get("https://api.lbank.info/v2/accuracy.do", { timeout: 5000 });
+    if (response.data?.result === true || response.status === 200) {
+      res.json({ status: "connected", last_check: new Date().toISOString() });
+    } else {
+      res.json({ status: "error", reason: "bad_response" });
+    }
+  } catch (error: any) {
+    const reason = error.code === "ECONNABORTED" ? "timeout"
+      : error.response?.status === 429 ? "rate_limited"
+      : error.response?.status === 401 ? "auth_failed"
+      : "connection_failed";
+    res.json({ status: "error", reason, details: error.message });
+  }
+});
+
+router.get("/health/latoken", async (_req, res) => {
+  try {
+    const response = await axios.get("https://api.latoken.com/v2/time", { timeout: 5000 });
+    if (response.status === 200) {
+      res.json({ status: "connected", last_check: new Date().toISOString(), server_time: response.data });
+    } else {
+      res.json({ status: "error", reason: "bad_response" });
+    }
+  } catch (error: any) {
+    const reason = error.code === "ECONNABORTED" ? "timeout"
+      : error.response?.status === 429 ? "rate_limited"
+      : error.response?.status === 401 ? "auth_failed"
+      : "connection_failed";
+    res.json({ status: "error", reason, details: error.message });
+  }
+});
+
+router.get("/health/uniswap", async (_req, res) => {
+  try {
+    const rpcUrl = process.env.RPC_URL || "https://ethereum-rpc.publicnode.com";
+    const response = await axios.post(rpcUrl, {
+      jsonrpc: "2.0",
+      method: "eth_blockNumber",
+      params: [],
+      id: 1
+    }, { timeout: 5000 });
+    if (response.data?.result) {
+      res.json({ 
+        status: "connected", 
+        last_check: new Date().toISOString(),
+        block_number: parseInt(response.data.result, 16)
+      });
+    } else {
+      res.json({ status: "error", reason: "bad_response" });
+    }
+  } catch (error: any) {
+    res.json({ status: "error", reason: error.code === "ECONNABORTED" ? "timeout" : "connection_failed" });
+  }
+});
+
 export default router;

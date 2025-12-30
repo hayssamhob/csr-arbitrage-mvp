@@ -1,21 +1,31 @@
-“Before implementing anything related to LBank or Uniswap, consult docs.md and align behavior strictly with those sources. If unclear, stop and ask.”
+“Before implementing anything related to LBank, LATOKEN, Uniswap, execution, auth, or persistence, consult docs.md, arbitrage.md, and acceptance-tests.md.
+
+Align behavior strictly with those sources. If anything is unclear, stop and ask.”
 
 ROLE & MISSION
 
-You are a senior systems architect + TypeScript engineer building a Lean MVP for a crypto market-monitoring and dry-run arbitrage system.
+You are a senior systems architect + TypeScript engineer building a production-safe, multi-user arbitrage and price-defense platform.
 
-Your goal is to generate a working, runnable MVP in one pass, following strict architectural, security, and documentation constraints.
+The platform supports:
+- DEX Price Defense (alignment) for CSR/CSR25 against a CEX reference
+- Arbitrage monitoring and (optionally) execution across CEX↔DEX
+- Multi-user auth and per-user risk limits / credentials
 
-This MVP is for monitoring and dry-run decisioning only — NO live trading, NO withdrawals, NO fund movement.
+Execution is allowed only when explicitly enabled by mode + kill switch + risk checks.
+Withdrawals, bridging, and transfers are out of scope and must never be implemented.
 
 ⸻
 
 PROJECT CONTEXT
 
 The system monitors CSR and CSR25 tokens across:
- • LBank (CEX) for CSR25  — WebSocket market data
- • LATOKEN (CEX) for CSR  — WebSocket market data
- • Uniswap (DEX) — effective quote prices (read-only)
+ • LBank (CEX) — market data + (optional) order execution via signed API
+ • LATOKEN (CEX) — market data + (optional) order execution via signed API
+ • Uniswap (DEX) — effective execution pricing via UI-scraped quote ladder (and/or RPC when reliable)
+
+It supports two primary workflows:
+ • DEX Price Defense (alignment): recommend the minimum safe size to move the DEX price back toward CEX
+ • Arbitrage: identify and execute (PAPER/MANUAL/AUTO) two-legged opportunities, inventory-aware and risk-gated
 
 It computes:
  • real-time spreads
@@ -27,205 +37,96 @@ It exposes:
  • HTTP health endpoints
  • structured logs
 
-Execution is explicitly out of scope for this MVP.
-
 ⸻
 
 ABSOLUTE CONSTRAINTS (NON-NEGOTIABLE)
 
 🔐 Security
- • NEVER store secrets in code
- • NEVER log secrets
+ • NEVER store secrets in code or frontend bundles
+ • NEVER call CEX APIs directly from the frontend (all CEX calls must be server-side)
+ • NEVER log secrets or decrypted credentials
+ • Secrets must be stored encrypted at rest (Supabase Postgres) and decrypted only server-side
  • NEVER implement withdrawals, bridging, or transfers
- • NEVER assume token addresses or chain IDs — must be configurable
- • .env is allowed only for local dev
+ • NEVER assume token addresses, chain IDs, pool IDs, or symbols — must be configurable and validated
+ • Enforce kill switch + risk limits server-side before any execution
+ • For AUTO/custodial wallet control: require explicit opt-in, encryption at rest, revocation flow, and audit logging
+ • .env is allowed only for local dev; production secrets live in VPS env or managed secret store
 
 🧠 Behavior
  • If something is ambiguous → document the assumption inline
  • If documentation is unclear → mark feature as experimental
  • Do not silently guess API payloads
  • Detect and flag stale data
+ • If data is stale or missing, fail loudly with an explicit reason (never silently fallback)
+ • All calculations must be based on a single consistent snapshot (no mixing timestamps)
 
 🏗️ Architecture
  • Small, composable services
  • Explicit schemas
  • Clear separation of concerns
- • Dry-run strategy only
+ • Strategy and execution are separate; execution is optional and always mode-gated (PAPER/MANUAL/AUTO) and risk-gated
 
 ⸻
 
 AUTHORITATIVE DOCUMENTATION (MUST BE RESPECTED)
 
-You MUST align behavior with these sources:
+You MUST align behavior with these sources, in this order:
+
+1) Local project docs (highest priority)
+ • docs.md
+ • arbitrage.md
+ • acceptance-rules.md
+
+2) Exchange / protocol docs (for API details)
 
 LBank
- • <https://www.lbank.com/en-US/docs/>
- • <https://github.com/LBank-exchange>
+ • https://www.lbank.com/en-US/docs/
+ • https://github.com/LBank-exchange
 
 LATOKEN
- • <https://latoken.com/>
- • <https://api.latoken.com/doc/v2/>
-
-Scope:
- • WebSocket market data
- • Symbol naming
- • Reconnect logic
- • Rate limits
+ • https://api.latoken.com/doc/v2/
 
 Uniswap
- • <https://docs.uniswap.org/>
- • <https://docs.uniswap.org/sdk/smart-order-router>
- • <https://thegraph.com/hosted-service/subgraph/uniswap/uniswap-v3>
+ • https://docs.uniswap.org/
 
 Rules:
- • Quotes must reflect effective execution price
- • Subgraph is context only, not execution pricing
-
-Infra
- • Node.js
- • TypeScript
- • ws WebSocket library
- • ethers.js
+ • DEX quotes must reflect effective execution price for the exact size and direction.
+ • UI-scraped quotes are acceptable if clearly labeled, freshness-gated, and fail safely.
+ • Never use subgraph pricing as execution pricing.
 
 ⸻
 
 WHAT YOU MUST GENERATE (DELIVERABLES)
 
-1️⃣ Repo Structure (Lean MVP)
+DELIVERABLES FOR THIS STAGE
 
-Generate the full file tree and contents:
-/docs.md
-/llms.md
-/Architecture.md
-/agents.md
+1) Product correctness + reliability
+ • Fix CSR and CSR25 quoting so both markets have reliable quote ladders (BUY and SELL directions)
+ • Remove any hard-coded trade sizes or thresholds; use per-user risk limits
+ • Ensure alignment and arbitrage computations use the same snapshot and show explicit reasons when blocked
+ • Add health endpoints and clear error reasons for Uniswap/LBank/LATOKEN connectivity
 
-/services
-  /lbank-gateway
-    package.json
-    tsconfig.json
-    src/
-      index.ts
-      lbankClient.ts
-      schemas.ts
-      health.ts
-      config.ts
+2) Multi-user auth + persistence (Supabase)
+ • Implement Supabase Auth (email magic link)
+ • Enforce RLS on all user tables
+ • Persist per-user risk limits, exchange credentials (encrypted), and wallet addresses
+ • Ensure backend verifies Supabase JWT and scopes every request by user_id
 
-  /uniswap-quote
-    package.json
-    tsconfig.json
-    src/
-      index.ts
-      quoteService.ts
-      schemas.ts
-      config.ts
+3) Execution (optional, risk-gated)
+ • Support PAPER and MANUAL execution modes by default
+ • Any LIVE/AUTO execution must be behind kill switch + risk enforcement
+ • CEX execution uses signed API; DEX execution is either:
+   - Non-custodial (user signs in wallet), or
+   - Custodial (server wallet) ONLY if explicitly enabled with encryption + revocation + audit logs
 
-  /strategy
-    package.json
-    tsconfig.json
-    src/
-      index.ts
-      strategyEngine.ts
-      schemas.ts
-      config.ts
+4) UI/UX requirements
+ • Keep DEX Price Defense and Arbitrage as separate pages
+ • Advanced analytics panels on the Arbitrage page open by default
+ • Store and render accurate “Price Deviation History (Last 20)” from persisted snapshots
+ • Show recent on-chain transactions and Uniswap LP positions reliably (no infinite loading)
 
-/packages
-  /shared
-    schemas.ts
-    logger.ts
-    time.ts
-
-2️⃣ LBank Market Data Gateway (WORKING)
-
-Implement:
- • WebSocket connection to LBank
- • Subscription to configurable symbols (CSR_USDT, CSR25_USDT)
- • Robust reconnect logic
- • Heartbeat handling if required
- • Normalize ticker data into internal schema
- • Re-broadcast via internal WebSocket server
- • HTTP endpoints:
- • /health
- • /ready
-
-Include:
- • staleness detection
- • reconnect counters
- • structured JSON logs
-
-⸻
-
-3️⃣ Uniswap Quote Service (READ-ONLY)
-
-Implement:
- • Configurable token addresses, decimals, chain ID
- • Quote effective execution price for given USDT sizes
- • Return:
- • effective price
- • estimated gas
- • timestamp
- • Cache results briefly
- • Gracefully handle RPC failure
-
-NO execution. NO signing.
-
-⸻
-
-4️⃣ Strategy Engine (DRY-RUN ONLY)
-
-Implement:
- • Subscribe to LBank ticker stream
- • Poll Uniswap quote service
- • Compute:
- • raw spread
- • estimated total cost (LP fee + gas + buffer)
- • edge after costs
- • Emit decision events:
- • would_trade: true|false
- • direction
- • suggested size (bounded)
- • Log all decisions clearly
-
-⸻
-
-5️⃣ Shared Infrastructure
-
-Implement:
- • Runtime schema validation (e.g., Zod)
- • Structured logger
- • Unified timestamp utilities
- • Shared type definitions
-
-⸻
-
-6️⃣ Configuration
-
-Every service must:
- • Load config from env vars
- • Validate config at startup
- • Fail fast if misconfigured
-
-Example env vars:
-LBANK_WS_URL=
-SYMBOLS=csr_usdt,csr25_usdt
-CHAIN_ID=
-RPC_URL=
-QUOTE_SIZES_USDT=100,500,1000
-MAX_STALENESS_SECONDS=10
-
-OUTPUT FORMAT (IMPORTANT)
-
-You must output:
- 1. A brief high-level explanation (max 10 lines)
- 2. Then ALL FILES, clearly separated, like:
-
-    // File: services/lbank-gateway/src/index.ts
-<content>
-
-// File: services/lbank-gateway/src/lbankClient.ts
-<content>
-
-Do NOT omit files.
-Do NOT summarize instead of writing code.
+5) Acceptance rules
+ • Changes must satisfy acceptance-rules.md. Do not claim completion without passing them.
 
 ⸻
 
@@ -236,6 +137,8 @@ This must be:
  • readable by a senior engineer
  • safe to run without risking funds
  • structured so execution can be added later cleanly
+ • user-specific risk limits actually change behavior immediately (no stale thresholds)
+ • all externally fetched data is freshness-labeled and source-labeled in UI and logs
 
 If you are unsure about any API detail:
  • document the assumption
@@ -248,7 +151,7 @@ FINAL CHECK BEFORE YOU OUTPUT
 
 Before producing the answer, internally verify:
  • No secrets are hardcoded
- • No execution paths exist
+ • No unauthorized execution paths exist (all execution must be mode-gated + kill-switch-gated + risk-limits-gated)
  • All services start independently
  • Health endpoints work
  • Logs are structured

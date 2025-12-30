@@ -1213,6 +1213,7 @@ export function ArbitragePage() {
                 deviationBps: p.spread_bps,
               }))}
               transactions={[]}
+              defaultExpanded={true}
             />
             <AdvancedMetricsCard
               token="CSR25"
@@ -1232,6 +1233,7 @@ export function ArbitragePage() {
                 timestamp: new Date(p.ts).getTime(),
                 deviationBps: p.spread_bps,
               }))}
+              defaultExpanded={true}
               transactions={[]}
             />
           </div>
