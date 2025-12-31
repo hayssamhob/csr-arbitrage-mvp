@@ -500,8 +500,11 @@ export function InventoryPage() {
         {/* Venue Balances */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {venues.map((venue) => {
-            // Determine connection status
-            const venueStatus = state.exchange_statuses[venue];
+            // Determine connection status (handle case variations from backend)
+            const venueLower = venue.toLowerCase();
+            const venueStatus =
+              state.exchange_statuses[venue] ||
+              state.exchange_statuses[venueLower];
             const hasBalances = getVenueBalances(venue).length > 0;
             const isConnected =
               venue === "Wallet"
