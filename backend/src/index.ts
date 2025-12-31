@@ -781,11 +781,11 @@ interface AlignmentResult {
   deviation_pct: number | null;
   band_bps: number;
   status:
-  | "ALIGNED"
-  | "BUY_ON_DEX"
-  | "SELL_ON_DEX"
-  | "NO_ACTION"
-  | "NOT_SUPPORTED_YET";
+    | "ALIGNED"
+    | "BUY_ON_DEX"
+    | "SELL_ON_DEX"
+    | "NO_ACTION"
+    | "NOT_SUPPORTED_YET";
   direction: "BUY" | "SELL" | "NONE";
   required_usdt: number | null;
   required_tokens: number | null;
@@ -798,6 +798,8 @@ interface AlignmentResult {
   reason: string;
   quotes_available: number;
   quotes_valid: number;
+  tick: number | null;
+  lp_fee_bps: number | null;
 }
 
 // Alignment bands per token (in basis points)
@@ -857,6 +859,8 @@ app.get("/api/alignment/:market", async (req, res) => {
     reason: "",
     quotes_available: 0,
     quotes_valid: 0,
+    tick: null,
+    lp_fee_bps: null,
   };
 
   try {
@@ -913,6 +917,8 @@ app.get("/api/alignment/:market", async (req, res) => {
           ? new Date(dexQuote.ts).getTime() / 1000
           : dexQuote.ts;
       result.dex_exec_price = dexQuote.effective_price_usdt;
+      result.tick = dexQuote.tick || null;
+      result.lp_fee_bps = dexQuote.lp_fee_bps || null;
 
       const dexAgeSec = now / 1000 - result.ts_dex!;
       if (dexAgeSec > DEX_STALE_SEC) {
@@ -1403,9 +1409,11 @@ redisConsumer.on('tick', (tick) => {
       amount_in: tick.amount_in || 1000,
       amount_out: tick.amount_out,
       gas_estimate_usdt: tick.gas_estimate_usdt || 0.5,
-      route: tick.route || 'v4_pool',
+      route: tick.route || "v4_pool",
       ts: tick.ts,
-      source: tick.source || 'uniswap_v4',
+      source: tick.source || "uniswap_v4",
+      tick: tick.tick || null,
+      lp_fee_bps: tick.lp_fee_bps || null,
     };
   }
 

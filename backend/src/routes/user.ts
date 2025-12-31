@@ -729,8 +729,13 @@ async function fetchLbankBalances(
   const ccxt = require("ccxt");
 
   try {
-    // Use lbank2 which supports the newer v2 API with RSA signing
-    const exchange = new ccxt.lbank2({
+    // Use lbank (v2 API) - ccxt exports it as 'lbank' not 'lbank2'
+    const LBankClass = ccxt.lbank || ccxt["lbank"];
+    if (!LBankClass) {
+      throw new Error("LBank exchange not available in ccxt");
+    }
+
+    const exchange = new LBankClass({
       apiKey: apiKey,
       secret: apiSecret,
       enableRateLimit: true,
