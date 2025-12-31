@@ -2,7 +2,7 @@
  * DefensePage - DEX Price Defense (Alignment)
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AdvancedMetricsCard } from "../components/AdvancedMetricsCard";
 import { AlignmentDisplay } from "../components/AlignmentDisplay";
 import { GlobalStatusBar, type ServiceStatus } from "../components/GlobalStatusBar";
@@ -158,8 +158,11 @@ export function DefensePage() {
     return () => clearInterval(interval);
   }, []);
 
-  const buildServiceStatus = (): ServiceStatus[] => {
-    const now = Date.now();
+  const serviceStatus = useMemo((): ServiceStatus[] => {
+    // This function builds a list of service statuses from the health and dashboard data.
+    // It is memoized to prevent re-calculation on every render, which occurs every 5 seconds.
+    // The dependencies are `health`, `dashboard`, and `lastUpdate`, so this will only re-run when the data changes.
+    const now = lastUpdate.getTime();
     const services: ServiceStatus[] = [];
 
     // LBank Gateway - CEX for CSR25
@@ -276,7 +279,7 @@ export function DefensePage() {
     });
 
     return services;
-  };
+  }, [health, dashboard, lastUpdate]);
 
   const getCexPrice = (token: "CSR" | "CSR25"): number => {
     if (token === "CSR")
@@ -293,7 +296,7 @@ export function DefensePage() {
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <GlobalStatusBar
-        services={buildServiceStatus()}
+        services={serviceStatus}
         lastDataUpdate={lastUpdate}
       />
 
