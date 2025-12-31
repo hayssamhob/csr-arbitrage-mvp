@@ -295,24 +295,29 @@ router.delete(
 );
 
 // Helper to mask API key (show first 4 and last 4 chars)
-function maskApiKey(encryptedKey: string): string {
+function maskApiKey(encryptedKey: string): { masked: string; valid: boolean } {
   try {
     const key = decrypt(encryptedKey);
-    if (key.length <= 8) return '****';
-    return key.slice(0, 4) + '****' + key.slice(-4);
-  } catch {
-    return '****';
+    if (key.length <= 8) return { masked: "****", valid: true };
+    return { masked: key.slice(0, 4) + "****" + key.slice(-4), valid: true };
+  } catch (err: any) {
+    console.error("Decryption error:", err.message);
+    return { masked: "[needs re-entry]", valid: false };
   }
 }
 
 // Helper to mask secret (show only last 4 chars)
-function maskSecret(encryptedSecret: string): string {
+function maskSecret(encryptedSecret: string): {
+  masked: string;
+  valid: boolean;
+} {
   try {
     const secret = decrypt(encryptedSecret);
-    if (secret.length <= 4) return '****';
-    return '****' + secret.slice(-4);
-  } catch {
-    return '****';
+    if (secret.length <= 4) return { masked: "****", valid: true };
+    return { masked: "****" + secret.slice(-4), valid: true };
+  } catch (err: any) {
+    console.error("Decryption error:", err.message);
+    return { masked: "[needs re-entry]", valid: false };
   }
 }
 
@@ -345,19 +350,30 @@ router.get(
     }
 
     // Transform to status format with masked keys
-    const exchanges = (data || []).map((cred: any) => ({
-      venue: cred.venue,
-      connected: true,
-      api_key_masked: cred.api_key_enc ? maskApiKey(cred.api_key_enc) : null,
-      api_secret_masked: cred.api_secret_enc
+    const exchanges = (data || []).map((cred: any) => {
+      const keyResult = cred.api_key_enc ? maskApiKey(cred.api_key_enc) : null;
+      const secretResult = cred.api_secret_enc
         ? maskSecret(cred.api_secret_enc)
-        : null,
-      has_secret: !!cred.api_secret_enc,
-      last_test_ok: cred.last_test_ok,
-      last_test_error: cred.last_test_error,
-      last_test_at: cred.last_test_at,
-      created_at: cred.created_at,
-    }));
+        : null;
+      const needsReentry =
+        (keyResult && !keyResult.valid) ||
+        (secretResult && !secretResult.valid);
+
+      return {
+        venue: cred.venue,
+        connected: !needsReentry,
+        needs_reentry: needsReentry,
+        api_key_masked: keyResult?.masked || null,
+        api_secret_masked: secretResult?.masked || null,
+        has_secret: !!cred.api_secret_enc,
+        last_test_ok: needsReentry ? false : cred.last_test_ok,
+        last_test_error: needsReentry
+          ? "Credentials encrypted with different key - please re-enter"
+          : cred.last_test_error,
+        last_test_at: cred.last_test_at,
+        created_at: cred.created_at,
+      };
+    });
 
     res.json(exchanges);
   }

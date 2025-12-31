@@ -22,6 +22,7 @@ interface RiskLimits {
 interface ExchangeStatus {
   venue: string;
   connected: boolean;
+  needs_reentry?: boolean;
   api_key_masked: string | null;
   api_secret_masked: string | null;
   has_secret: boolean;
@@ -336,7 +337,11 @@ export function SettingsPage() {
           <div className="mb-6 p-4 bg-slate-800/50 rounded-lg">
             <div className="flex items-center justify-between mb-3">
               <span className="font-medium">LBank</span>
-              {getExchangeStatus("lbank") ? (
+              {getExchangeStatus("lbank")?.needs_reentry ? (
+                <span className="text-amber-400 text-sm">
+                  ⚠️ Re-enter credentials
+                </span>
+              ) : getExchangeStatus("lbank")?.connected ? (
                 <span className="text-emerald-400 text-sm">✓ Connected</span>
               ) : (
                 <span className="text-slate-500 text-sm">Not configured</span>
@@ -396,7 +401,11 @@ export function SettingsPage() {
           <div className="p-4 bg-slate-800/50 rounded-lg">
             <div className="flex items-center justify-between mb-3">
               <span className="font-medium">LATOKEN</span>
-              {getExchangeStatus("latoken") ? (
+              {getExchangeStatus("latoken")?.needs_reentry ? (
+                <span className="text-amber-400 text-sm">
+                  ⚠️ Re-enter credentials
+                </span>
+              ) : getExchangeStatus("latoken")?.connected ? (
                 <span className="text-emerald-400 text-sm">✓ Connected</span>
               ) : (
                 <span className="text-slate-500 text-sm">Not configured</span>

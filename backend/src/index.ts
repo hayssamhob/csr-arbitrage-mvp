@@ -13,8 +13,8 @@ import express from 'express';
 import * as http from 'http';
 import process from "process";
 import { WebSocket, WebSocketServer } from "ws";
-import userRoutes from "./routes/user";
 import { RedisConsumer } from "./redisConsumer";
+import userRoutes from "./routes/user";
 
 // Use require for ethers to avoid TS module resolution issues
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -820,9 +820,10 @@ app.get("/api/alignment/:market", async (req, res) => {
     }
 
     // 2. Get DEX quotes (from local state updated via Redis)
-    const dexQuote = market === "csr_usdt"
-      ? dashboardData.market_state?.csr_usdt?.uniswap_quote
-      : dashboardData.market_state?.csr25_usdt?.uniswap_quote;
+    const dexQuote =
+      market === "csr_usdt"
+        ? dashboardData.market_state?.csr_usdt?.uniswap_quote
+        : dashboardData.market_state?.csr25_usdt?.uniswap_quote;
 
     if (!dexQuote) {
       issues.push("dex_data_missing");
@@ -833,7 +834,10 @@ app.get("/api/alignment/:market", async (req, res) => {
 
     // Get DEX price from Redis-updated state
     if (dexQuote) {
-      result.ts_dex = typeof dexQuote.ts === 'string' ? new Date(dexQuote.ts).getTime() / 1000 : dexQuote.ts;
+      result.ts_dex =
+        typeof dexQuote.ts === "string"
+          ? new Date(dexQuote.ts).getTime() / 1000
+          : dexQuote.ts;
       result.dex_exec_price = dexQuote.effective_price_usdt;
 
       const dexAgeSec = now / 1000 - result.ts_dex!;
@@ -857,12 +861,34 @@ app.get("/api/alignment/:market", async (req, res) => {
 
     // Simplified logic for single-quote Redis model
     result.required_usdt = 1000; // Default size for display
-    result.required_tokens = dexQuote ? Math.round((1000 / dexQuote.effective_price_usdt) * 100) / 100 : 0;
+    result.required_tokens = dexQuote
+      ? Math.round((1000 / dexQuote.effective_price_usdt) * 100) / 100
+      : 0;
     result.expected_exec_price = result.dex_exec_price;
     result.price_impact_pct = 0.5; // Estimated
     result.network_cost_usd = dexQuote?.gas_estimate_usdt || 0.01;
     result.confidence = "HIGH";
     result.reason = "computed_from_redis_tick";
+
+    // Calculate alignment status based on deviation
+    if (result.deviation_pct !== null) {
+      const deviationBps = Math.abs(result.deviation_pct) * 100; // Convert % to bps
+      const bandBpsThreshold = bandBps;
+
+      if (deviationBps <= bandBpsThreshold) {
+        // Within band - aligned, no action needed
+        result.status = "ALIGNED";
+        result.direction = "NONE";
+      } else if (result.deviation_pct < 0) {
+        // DEX price < CEX price → BUY on DEX (cheaper), SELL on CEX
+        result.status = "BUY_ON_DEX";
+        result.direction = "BUY";
+      } else {
+        // DEX price > CEX price → SELL on DEX (higher), BUY on CEX
+        result.status = "SELL_ON_DEX";
+        result.direction = "SELL";
+      }
+    }
 
     return res.json(result);
   } catch (error: any) {
