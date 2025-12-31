@@ -98,8 +98,7 @@ interface SystemStatus {
   ts: string;
   lbank_gateway?: ServiceHealth;
   latoken_gateway?: ServiceHealth;
-  uniswap_quote_csr25?: ServiceHealth;
-  uniswap_quote_csr?: ServiceHealth;
+  uniswap_v4_gateway?: ServiceHealth;
   strategy_engine?: ServiceHealth;
   overall_status: string;
 }
@@ -328,35 +327,6 @@ function App() {
       dexPrice,
       cexPrice,
     });
-  };
-
-  const transformed = {
-    quotes: fallbackJson.quotes.map((q: any) => ({
-      market: q.market,
-      inputToken: "USDT",
-      outputToken: q.market.includes("CSR25") ? "CSR25" : "CSR",
-      amountInUSDT: 100,
-      amountInRaw: "100",
-      amountOutToken: q.dex_price * 100,
-      amountOutRaw: (q.dex_price * 100).toString(),
-      price_usdt_per_token: q.dex_price,
-      price_token_per_usdt: 1 / q.dex_price,
-      usdt_for_1_token: 1 / q.dex_price,
-      gasEstimateUsdt: null,
-      gasRaw: null,
-      route: "database_fallback",
-      ts: Date.now(),
-      scrapeMs: 0,
-      valid: true,
-      reason: null,
-    })),
-    meta: {
-      scrapeMs: 0,
-      browser: "database_fallback",
-      errorsLast5m: 0,
-      lastSuccessTs: Date.now(),
-      consecutiveFailures: 0,
-    },
   };
   // Scraper polling removed in Redis architecture
   useEffect(() => {
