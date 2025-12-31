@@ -1421,28 +1421,36 @@ export function ArbitragePage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {opp.is_actionable ? (
+                      <div className="flex flex-col items-center gap-1">
                         <button
                           onClick={() => handleExecute(opp)}
-                          disabled={state.kill_switch}
-                          className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${
+                          disabled={state.kill_switch || !opp.is_actionable}
+                          className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
                             state.kill_switch
                               ? "bg-slate-700 text-slate-500 cursor-not-allowed"
+                              : !opp.is_actionable
+                              ? "bg-amber-600/50 text-amber-200 cursor-not-allowed"
                               : opp.edge_bps >= 50
-                              ? "bg-emerald-600 text-white hover:bg-emerald-500 animate-pulse"
-                              : "bg-blue-600 text-white hover:bg-blue-500"
+                              ? "bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-500/30 animate-pulse"
+                              : "bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/30"
                           }`}
+                          title={
+                            opp.is_actionable
+                              ? "Click to execute trade"
+                              : opp.reason
+                          }
                         >
                           ⚡{" "}
                           {state.mode === "PAPER"
                             ? "Paper Trade"
                             : "Execute Arb"}
                         </button>
-                      ) : (
-                        <span className="text-slate-500 text-xs">
-                          {opp.reason}
-                        </span>
-                      )}
+                        {!opp.is_actionable && (
+                          <span className="text-amber-400 text-xs">
+                            ⚠️ {opp.reason?.replace(/_/g, " ")}
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
