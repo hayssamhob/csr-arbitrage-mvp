@@ -19,18 +19,19 @@ import { CustodialRiskModal } from "../components/CustodialRiskModal";
 import { EngineControl } from "../components/EngineControl";
 import { Footer } from "../components/Footer";
 import { useAuth } from "../contexts/AuthContext";
+import { useUserData } from "../contexts/UserDataContext";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.PROD ? "" : "http://localhost:8001");
 
-// User risk limits from Supabase - NO HARDCODED DEFAULTS
+// User risk limits type (now from global context)
 interface UserRiskLimits {
   min_edge_bps: number;
   max_order_usdt: number;
   max_slippage_bps: number;
   kill_switch: boolean;
-  loaded: boolean; // True only when fetched from DB
+  loaded: boolean;
 }
 
 // Helper to get exchange URL for a market
@@ -59,11 +60,17 @@ function getDexUrl(market: string): string {
 
 // Traffic Light Edge Indicator Component
 // Red: Negative or below threshold, Yellow: Near threshold, Green: Profitable
-function EdgeTrafficLight({ edgeBps, minEdgeBps = 50 }: { edgeBps: number; minEdgeBps?: number }) {
+function EdgeTrafficLight({
+  edgeBps,
+  minEdgeBps = 50,
+}: {
+  edgeBps: number;
+  minEdgeBps?: number;
+}) {
   let color: string;
   let label: string;
   let bgColor: string;
-  
+
   if (edgeBps < 0) {
     color = "text-red-500";
     bgColor = "bg-red-500";
@@ -77,7 +84,7 @@ function EdgeTrafficLight({ edgeBps, minEdgeBps = 50 }: { edgeBps: number; minEd
     bgColor = "bg-emerald-500";
     label = "GO";
   }
-  
+
   return (
     <div className="flex items-center gap-2">
       <div className={`w-3 h-3 rounded-full ${bgColor} animate-pulse`} />
@@ -623,19 +630,42 @@ export function ArbitragePage() {
   const [_pendingMode, setPendingMode] = useState<
     "PAPER" | "MANUAL" | "AUTO" | null
   >(null);
-  const [userInventory, setUserInventory] = useState<UserInventory | null>(
-    null
-  );
+  // Use global user data context - loads on app init, no per-page delays
+  const { limits: globalLimits, inventory: globalInventory } = useUserData();
 
-  // User risk limits - MUST be loaded before any decisions are made
-  const [userLimits, setUserLimits] = useState<UserRiskLimits>({
-    min_edge_bps: 0,
-    max_order_usdt: 0,
-    max_slippage_bps: 0,
-    kill_switch: true,
-    loaded: false, // NOT LOADED = block all actions
-  });
-  const [_limitsError, setLimitsError] = useState<string | null>(null);
+  // Map global context to local types for compatibility
+  const userLimits: UserRiskLimits = {
+    min_edge_bps: globalLimits.min_edge_bps,
+    max_order_usdt: globalLimits.max_position_usd,
+    max_slippage_bps: globalLimits.max_slippage_bps,
+    kill_switch: globalLimits.kill_switch,
+    loaded: globalLimits.loaded,
+  };
+
+  // Map global inventory to local type
+  const userInventory: UserInventory | null = globalInventory.loaded
+    ? {
+        balances: globalInventory.balances.map(
+          (b: {
+            venue: string;
+            asset: string;
+            available: number;
+            locked: number;
+            total: number;
+            usd_value: number;
+          }) => ({
+            venue: b.venue,
+            asset: b.asset,
+            available: b.available,
+            locked: b.locked,
+            total: b.total,
+            usd_value: b.usd_value,
+          })
+        ),
+        total_usd: globalInventory.total_usd,
+      }
+    : null;
+
   const { getAccessToken } = useAuth();
 
   // Helper to get available balance for a venue/asset
@@ -672,53 +702,7 @@ export function ArbitragePage() {
     }
   };
 
-  // Fetch user risk limits FIRST - REQUIRED before any decisions
-  useEffect(() => {
-    const fetchLimits = async () => {
-      try {
-        const token = await getAccessToken();
-        if (!token) {
-          setLimitsError("Not authenticated - using blocked mode");
-          return;
-        }
-        const res = await fetch(`${API_URL}/api/me/risk-limits`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setUserLimits({
-            min_edge_bps: data.min_edge_bps,
-            max_order_usdt: data.max_order_usdt,
-            max_slippage_bps: data.max_slippage_bps,
-            kill_switch: data.kill_switch,
-            loaded: true,
-          });
-          setLimitsError(null);
-        } else {
-          // Use safe defaults if API fails - allows monitoring but blocks execution
-          setUserLimits({
-            min_edge_bps: 50,
-            max_order_usdt: 100,
-            max_slippage_bps: 100,
-            kill_switch: true, // Kill switch ON by default for safety
-            loaded: true,
-          });
-          setLimitsError("Using default limits - update in Settings");
-        }
-      } catch (err) {
-        // Use safe defaults on network error - allows monitoring but blocks execution
-        setUserLimits({
-          min_edge_bps: 50,
-          max_order_usdt: 100,
-          max_slippage_bps: 100,
-          kill_switch: true,
-          loaded: true,
-        });
-        setLimitsError("Using default limits - check Settings");
-      }
-    };
-    fetchLimits();
-  }, [getAccessToken]);
+  // User limits now come from global UserDataContext - no per-page fetch needed
 
   // Fetch real data from dashboard API
   useEffect(() => {
@@ -952,37 +936,7 @@ export function ArbitragePage() {
     fetchPriceHistory();
   }, []);
 
-  // Fetch user inventory for balance-based calculations
-  useEffect(() => {
-    const fetchInventory = async () => {
-      try {
-        // Try to get auth token from localStorage
-        const authData = localStorage.getItem("auth");
-        if (!authData) return;
-
-        const { accessToken } = JSON.parse(authData);
-        if (!accessToken) return;
-
-        const response = await fetch(`${API_URL}/api/me/balances`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setUserInventory({
-            balances: data.balances || [],
-            total_usd: data.total_usd || 0,
-          });
-        }
-      } catch (err) {
-        console.error("Failed to fetch user inventory:", err);
-      }
-    };
-
-    fetchInventory();
-    const interval = setInterval(fetchInventory, 30000); // Refresh every 30s
-    return () => clearInterval(interval);
-  }, []);
+  // User inventory now comes from global UserDataContext - no per-page fetch needed
 
   const handleModeChange = (newMode: "PAPER" | "MANUAL" | "AUTO") => {
     if (newMode === "AUTO") {
