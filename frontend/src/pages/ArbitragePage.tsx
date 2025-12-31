@@ -18,7 +18,6 @@ import { AdvancedMetricsCard } from "../components/AdvancedMetricsCard";
 import { CustodialRiskModal } from "../components/CustodialRiskModal";
 import { EngineControl } from "../components/EngineControl";
 import { Footer } from "../components/Footer";
-import { useAuth } from "../contexts/AuthContext";
 import { useUserData } from "../contexts/UserDataContext";
 
 const API_URL =
@@ -665,8 +664,6 @@ export function ArbitragePage() {
         total_usd: globalInventory.total_usd,
       }
     : null;
-
-  const { getAccessToken } = useAuth();
 
   // Helper to get available balance for a venue/asset
   const getAvailableBalance = (venue: string, asset: string): number => {
