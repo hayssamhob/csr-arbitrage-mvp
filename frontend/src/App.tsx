@@ -412,6 +412,48 @@ function App() {
         }
       } catch (e) {
         console.error("Failed to fetch scraper quotes:", e);
+        // Try fallback endpoint when scraper fails
+        try {
+          const fallbackResp = await fetch(
+            `${API_URL}/api/dex-quotes/fallback`
+          );
+          if (fallbackResp.ok) {
+            const fallbackJson = await fallbackResp.json();
+            // Transform fallback data to scraper format
+            const transformed = {
+              quotes: fallbackJson.quotes.map((q: any) => ({
+                market: q.market,
+                inputToken: "USDT",
+                outputToken: q.market.includes("CSR25") ? "CSR25" : "CSR",
+                amountInUSDT: 100,
+                amountInRaw: "100",
+                amountOutToken: q.dex_price * 100,
+                amountOutRaw: (q.dex_price * 100).toString(),
+                price_usdt_per_token: q.dex_price,
+                price_token_per_usdt: 1 / q.dex_price,
+                usdt_for_1_token: 1 / q.dex_price,
+                gasEstimateUsdt: null,
+                gasRaw: null,
+                route: "database_fallback",
+                ts: Date.now(),
+                scrapeMs: 0,
+                valid: true,
+                reason: null,
+              })),
+              meta: {
+                scrapeMs: 0,
+                browser: "database_fallback",
+                errorsLast5m: 0,
+                lastSuccessTs: Date.now(),
+                consecutiveFailures: 0,
+              },
+            };
+            setScraperData(transformed);
+            console.log("Using database fallback for DEX quotes");
+          }
+        } catch (fallbackError) {
+          console.error("Fallback quotes also failed:", fallbackError);
+        }
       }
     }
     fetchScraperQuotes();

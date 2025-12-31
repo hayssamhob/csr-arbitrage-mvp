@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { Footer } from "../components/Footer";
 import { useAuth } from "../contexts/AuthContext";
+import { supabase } from "../lib/supabase";
 
 const API_URL =
   import.meta.env.VITE_API_URL || "https://trade.depollutenow.com";
@@ -101,15 +102,40 @@ export function SettingsPage() {
 
   const fetchExchanges = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/me/exchanges`, {
-        headers: await authHeaders(),
-      });
+      // Check if user is actually authenticated
+      const { data: sessionData } = await supabase.auth.getSession();
+      console.log("[Settings] Session user:", sessionData.session?.user?.email);
+      console.log("[Settings] Session role:", sessionData.session?.user?.role);
+
+      const token = await getAccessToken();
+      console.log("[Settings] Token available:", !!token);
+      console.log("[Settings] Token first 50 chars:", token?.substring(0, 50));
+
+      // Decode token to check role
+      if (token) {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        console.log("[Settings] Token payload role:", payload.role);
+        console.log("[Settings] Token payload email:", payload.email);
+      }
+
+      const headers = await authHeaders();
+      console.log(
+        "[Settings] Authorization header:",
+        headers.Authorization?.substring(0, 50)
+      );
+
+      const res = await fetch(`${API_URL}/api/me/exchanges`, { headers });
+      console.log("[Settings] Exchanges response status:", res.status);
       if (res.ok) {
         const data = await res.json();
+        console.log("[Settings] Exchanges data:", data);
         setExchanges(data);
+      } else {
+        const errText = await res.text();
+        console.error("[Settings] Exchanges error:", res.status, errText);
       }
     } catch (err) {
-      console.error("Failed to fetch exchanges:", err);
+      console.error("[Settings] Failed to fetch exchanges:", err);
     }
   };
 

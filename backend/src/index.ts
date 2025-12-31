@@ -587,6 +587,92 @@ app.get("/api/state", (req, res) => {
   res.json(state);
 });
 
+// Fallback DEX quotes from database when scraper fails
+app.get("/api/dex-quotes/fallback", async (req, res) => {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(503).json({ error: "Database not configured" });
+    }
+
+    // Get latest price snapshots for both tokens
+    const response = await fetch(`${supabaseUrl}/rest/v1/price_snapshots?select=market,cex_price,dex_price,spread_bps,timestamp&order=timestamp.desc&limit=2`, {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch price snapshots');
+    }
+
+    const snapshots = await response.json() as any[];
+    
+    // Transform to quote format
+    const quotes = snapshots.map((snap: any) => ({
+      market: snap.market,
+      cex_price: parseFloat(snap.cex_price),
+      dex_price: parseFloat(snap.dex_price),
+      spread_bps: parseFloat(snap.spread_bps),
+      timestamp: snap.timestamp,
+      source: "database_fallback"
+    }));
+
+    res.json({ quotes, source: "database_fallback" });
+  } catch (error: any) {
+    console.error('Fallback quotes error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Price Deviation History - Last 20 entries from database
+app.get("/api/price-deviation-history", async (req, res) => {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(503).json({ error: "Database not configured" });
+    }
+
+    // Get last 20 price snapshots
+    const response = await fetch(`${supabaseUrl}/rest/v1/price_snapshots?select=market,cex_price,dex_price,spread_bps,timestamp&order=timestamp.desc&limit=20`, {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch price deviation history');
+    }
+
+    const snapshots = await response.json() as any[];
+    
+    // Transform to expected format
+    const history = snapshots.map((snap: any) => ({
+      market: snap.market,
+      cex_price: parseFloat(snap.cex_price),
+      dex_price: parseFloat(snap.dex_price),
+      spread_bps: parseFloat(snap.spread_bps),
+      timestamp: snap.timestamp,
+      deviation_percent: Math.abs(parseFloat(snap.spread_bps) / 100)
+    }));
+
+    res.json({ 
+      history,
+      count: history.length,
+      source: "database"
+    });
+  } catch (error: any) {
+    console.error('Price deviation history error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Orchestrator API: /api/health - aggregated health
 app.get("/api/health", (req, res) => {
   res.json(dashboardData.system_status);

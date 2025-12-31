@@ -926,6 +926,52 @@ export function ArbitragePage() {
     return () => clearInterval(interval);
   }, []);
 
+  // Fetch Price Deviation History from database
+  useEffect(() => {
+    const fetchPriceHistory = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/price-deviation-history`);
+        if (response.ok) {
+          const data = await response.json();
+
+          // Transform database data to the expected format
+          const csrHistory: PriceHistoryPoint[] = [];
+          const csr25History: PriceHistoryPoint[] = [];
+
+          data.history.forEach((item: any) => {
+            const point = {
+              ts: item.timestamp,
+              spread_bps: item.spread_bps,
+            };
+
+            if (item.market === "csr_usdt") {
+              csrHistory.push(point);
+            } else if (item.market === "csr25_usdt") {
+              csr25History.push(point);
+            }
+          });
+
+          setState((prev) => ({
+            ...prev,
+            priceHistory: {
+              csr_usdt: csrHistory.slice().reverse(), // Show oldest first
+              csr25_usdt: csr25History.slice().reverse(),
+            },
+          }));
+
+          console.log("Loaded price deviation history from database:", {
+            csr: csrHistory.length,
+            csr25: csr25History.length,
+          });
+        }
+      } catch (err) {
+        console.error("Failed to fetch price deviation history:", err);
+      }
+    };
+
+    fetchPriceHistory();
+  }, []);
+
   // Fetch user inventory for balance-based calculations
   useEffect(() => {
     const fetchInventory = async () => {

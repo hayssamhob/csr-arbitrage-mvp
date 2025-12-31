@@ -298,8 +298,10 @@ router.get(
   "/exchanges",
   requireAuth,
   async (req: AuthenticatedRequest, res) => {
+    console.log("[exchanges] Fetching for user:", req.userId);
     const supabase = getSupabase();
     if (!supabase) {
+      console.log("[exchanges] Supabase not configured");
       return res.status(503).json({ error: "Database not configured" });
     }
 
@@ -309,6 +311,11 @@ router.get(
         "id, venue, api_key_enc, api_secret_enc, last_test_ok, last_test_error, last_test_at, created_at, updated_at"
       )
       .eq("user_id", req.userId);
+
+    console.log("[exchanges] Query result:", {
+      dataCount: data?.length,
+      error: error?.message,
+    });
 
     if (error) {
       return res.status(500).json({ error: error.message });
@@ -489,6 +496,21 @@ router.post(
 
       return res.status(500).json({ error: "Failed to test credentials" });
     }
+  }
+);
+
+// GET /api/me/liquidity-positions - Get user's LP positions
+router.get(
+  "/liquidity-positions",
+  requireAuth,
+  async (req: AuthenticatedRequest, res) => {
+    const supabase = getSupabase();
+    if (!supabase) {
+      return res.status(503).json({ error: "Database not configured" });
+    }
+
+    // For now, return empty array - this would typically query Uniswap for LP positions
+    res.json([]);
   }
 );
 

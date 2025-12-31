@@ -46,8 +46,12 @@ export async function requireAuth(
   }
 
   try {
-    // Supabase JWT secret is base64 encoded - decode it first
-    const secretBytes = Buffer.from(SUPABASE_JWT_SECRET, "base64");
+    // Debug: Log token info
+    console.log("Token debug - first 50 chars:", token.substring(0, 50));
+
+    // Try raw secret first (some Supabase configs use raw)
+    const secretBytes = new TextEncoder().encode(SUPABASE_JWT_SECRET);
+    console.log("Using raw secret, length:", secretBytes.length);
     const { payload } = await jose.jwtVerify(token, secretBytes);
 
     // Supabase JWT payload contains 'sub' (user_id) and 'email'
