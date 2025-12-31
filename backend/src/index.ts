@@ -1128,6 +1128,44 @@ app.get('/api/opportunities', (req, res) => {
   });
 });
 
+// Trade Simulation Ladder Endpoint
+app.get('/api/ladder/:marketId', (req, res) => {
+  const marketId = req.params.marketId; // e.g., "CSR:0:0"
+  // Parse symbol from marketId
+  const symbol = marketId.split(':')[0].toLowerCase();
+  const market = symbol.includes('csr25') ? 'csr25_usdt' : 'csr_usdt';
+
+  // Get current market state
+  const state = dashboardData.market_state?.[market];
+  const midPrice = state?.lbank_ticker?.last || state?.latoken_ticker?.last || state?.uniswap_quote?.effective_price_usdt || 0;
+
+  if (!midPrice) {
+    return res.json({ ladder: [] });
+  }
+
+  // Generate synthetic ladder for visualization
+  // In a real implementation, this would call the Strategy Engine or Uniswap Quoter
+  const steps = [100, 500, 1000, 5000, 10000];
+  const ladder = steps.map(amount => {
+    // Simulate slippage (0.1% base + 0.05% per 1000 USDT)
+    const slippage = 0.001 + (amount / 1000000) * 0.05;
+    const priceImpact = slippage * 100;
+    const effectivePrice = midPrice * (1 - slippage);
+    const amountOut = amount / effectivePrice;
+
+    return {
+      amountIn: amount,
+      amountOut,
+      effectivePrice,
+      priceImpact,
+      route: 'v4_pool',
+      gasEstimate: 0.5
+    };
+  });
+
+  res.json({ ladder });
+});
+
 // Debug endpoint - shows configured URLs and last fetch timestamps (no secrets)
 const serviceLastFetch: Record<string, string | null> = {
   lbank_gateway: null,
