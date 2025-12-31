@@ -76,18 +76,17 @@ async function getQuote(symbol: 'CSR' | 'CSR25', amountUsdt: number) {
 
 async function publishTick(symbol: string, data: any) {
     const tick = {
-        type: 'market.tick',
+        type: 'dex_quote',
         eventId: uuidv4(),
-        symbol: symbol.toUpperCase() + '/USDT',
+        symbol: symbol.toLowerCase() === 'csr' ? 'csr/usdt' : 'csr25/usdt',
         venue: 'uniswap_v3',
-        ts: Date.now(),
-        last: data.price,
-        price: data.price,
-        meta: {
-            amountOut: data.amountOut,
-            gasEstimate: data.gasEstimate,
-            route: data.route
-        }
+        source: 'uniswap_v4',
+        ts: new Date().toISOString(),
+        effective_price_usdt: data.price,
+        amount_in: 100, // Matching the poll amount
+        amount_out: data.amountOut,
+        gas_estimate_usdt: parseFloat(data.gasEstimate) / 1e18 * 2500, // Very rough USD estimate
+        route: data.route
     };
 
     try {
