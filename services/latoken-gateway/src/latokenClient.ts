@@ -138,9 +138,10 @@ export class LatokenClient extends EventEmitter {
       const markets = await this.exchange.loadMarkets();
 
       for (const symbol of this.symbols) {
-        // Parse our internal symbol format (e.g., "csr_usdt" -> "CSR/USDT")
+        // Parse our internal symbol format (e.g., "csr_usdt" or "CSR/USDT")
         // Latoken uses BASE/QUOTE format, uppercase
-        const [base, quote] = symbol.toUpperCase().split("_");
+        const separator = symbol.includes("/") ? "/" : "_";
+        const [base, quote] = symbol.toUpperCase().split(separator);
         const ccxtSymbol = `${base}/${quote}`;
 
         if (markets[ccxtSymbol]) {
