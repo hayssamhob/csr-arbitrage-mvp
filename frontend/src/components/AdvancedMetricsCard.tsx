@@ -10,6 +10,8 @@
  */
 
 import { useState } from "react";
+import Chart from "./Chart";
+import { type ApexOptions } from "apexcharts";
 
 interface DeviationHistoryPoint {
   timestamp: number;
@@ -62,6 +64,41 @@ export function AdvancedMetricsCard({
   const grossProfitUsdt =
     (Math.abs(rawDeviationBps) / 10000) * hypotheticalSize;
   const netProfitUsdt = (edgeAfterCostsBps / 10000) * hypotheticalSize;
+
+  const chartOptions: ApexOptions = {
+    chart: {
+      type: "bar",
+      height: 100,
+      sparkline: {
+        enabled: true,
+      },
+    },
+    plotOptions: {
+      bar: {
+        columnWidth: "80%",
+        distributed: true,
+      },
+    },
+    colors: deviationHistory
+      .slice(-20)
+      .map((p) => (p.deviationBps >= 0 ? "#10B981" : "#F43F5E")),
+    tooltip: {
+      enabled: true,
+      y: {
+        formatter: (val) => `${val.toFixed(0)} bps`,
+      },
+    },
+    xaxis: {
+      categories: deviationHistory.slice(-20).map((p) => p.timestamp),
+    },
+  };
+
+  const chartSeries = [
+    {
+      name: "Deviation",
+      data: deviationHistory.slice(-20).map((p) => p.deviationBps),
+    },
+  ];
 
   return (
     <div className="bg-slate-800/30 rounded-xl border border-slate-700/50">
@@ -170,28 +207,12 @@ export function AdvancedMetricsCard({
               Price Deviation History (Last 20)
             </div>
             {deviationHistory.length > 0 ? (
-              <div className="h-16 flex items-end gap-0.5">
-                {deviationHistory.slice(-20).map((point, i) => {
-                  const maxDeviation = Math.max(
-                    ...deviationHistory.map((p) => Math.abs(p.deviationBps)),
-                    100
-                  );
-                  const height =
-                    (Math.abs(point.deviationBps) / maxDeviation) * 100;
-                  return (
-                    <div
-                      key={i}
-                      className={`flex-1 rounded-t ${
-                        point.deviationBps >= 0
-                          ? "bg-emerald-500/50"
-                          : "bg-red-500/50"
-                      }`}
-                      style={{ height: `${Math.max(height, 5)}%` }}
-                      title={`${point.deviationBps.toFixed(0)} bps`}
-                    />
-                  );
-                })}
-              </div>
+              <Chart
+                options={chartOptions}
+                series={chartSeries}
+                type="bar"
+                height={100}
+              />
             ) : (
               <div className="text-center py-4 text-slate-600 text-xs">
                 No price deviation history available

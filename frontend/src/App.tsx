@@ -455,7 +455,7 @@ function App() {
                 Live Monitoring
               </h2>
             </div>
-            <h1 className="text-4xl font-black text-white tracking-tight">
+            <h1 className="text-4xl font-black text-white tracking-tight drop-shadow-[0_0_10px_rgba(255,255,255,0.1)]">
               Market <span className="text-slate-500">Alignment</span>
             </h1>
           </div>
