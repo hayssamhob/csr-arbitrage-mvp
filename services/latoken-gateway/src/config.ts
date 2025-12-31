@@ -28,6 +28,11 @@ const ConfigSchema = z.object({
 
   // Log level
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+
+  // Supabase
+  SUPABASE_URL: z.string().default(""),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().default(""),
+  CEX_SECRETS_KEY: z.string().default(""),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -42,6 +47,9 @@ export function loadConfig(): Config {
     POLL_INTERVAL_MS: process.env.POLL_INTERVAL_MS,
     MAX_STALENESS_SECONDS: process.env.MAX_STALENESS_SECONDS,
     LOG_LEVEL: process.env.LOG_LEVEL,
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    CEX_SECRETS_KEY: process.env.CEX_SECRETS_KEY,
   };
 
   const result = ConfigSchema.safeParse(rawConfig);

@@ -46,6 +46,7 @@ fi
 # Generate Secure Passwords
 REDIS_PASSWORD=$(openssl rand -hex 16)
 DB_PASSWORD=$(openssl rand -hex 16)
+CEX_SECRETS_KEY=$(openssl rand -hex 32)
 
 echo -e "${YELLOW}🔐 Generated secure passwords for deployment...${NC}"
 
@@ -54,6 +55,7 @@ echo "RPC_URL=$RPC_URL" > .env.deploy
 echo "LOG_LEVEL=info" >> .env.deploy
 echo "REDIS_PASSWORD=$REDIS_PASSWORD" >> .env.deploy
 echo "DB_PASSWORD=$DB_PASSWORD" >> .env.deploy
+echo "CEX_SECRETS_KEY=$CEX_SECRETS_KEY" >> .env.deploy
 
 echo -e "${YELLOW}📁 Creating remote directory...${NC}"
 ssh -i "$SSH_KEY" $SERVER_USER@$SERVER_IP "mkdir -p $REMOTE_DIR"

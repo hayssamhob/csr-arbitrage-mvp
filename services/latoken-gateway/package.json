@@ -9,6 +9,7 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.89.0",
     "@types/uuid": "^9.0.8",
     "axios": "^1.6.0",
     "ccxt": "^4.5.29",

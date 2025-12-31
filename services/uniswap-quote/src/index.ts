@@ -6,11 +6,15 @@ import Redis from 'ioredis';
 import { v4 as uuidv4 } from "uuid";
 import {
   createPublicClient,
+  createWalletClient,
   formatUnits,
   parseAbi,
   http as viemHttp,
 } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { mainnet } from "viem/chains";
+import { createClient } from "@supabase/supabase-js";
+import { ExecutionHandler } from './execution';
 
 // ============================================================================
 // Uniswap V4 Gateway Service
@@ -19,7 +23,7 @@ import { mainnet } from "viem/chains";
 // ============================================================================
 
 // Structured logging
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 const LOG_LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
 
 function log(level: LogLevel, event: string, data?: Record<string, unknown>): void {
@@ -99,6 +103,99 @@ async function main() {
     chain: mainnet,
     transport: viemHttp(RPC_URL),
   });
+
+  // Supabase Client
+  const SUPABASE_URL = process.env.SUPABASE_URL || "";
+  const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const CEX_SECRETS_KEY = process.env.CEX_SECRETS_KEY || "";
+
+  let supabase: any = null;
+  if (SUPABASE_URL && SUPABASE_KEY) {
+    supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+    log("info", "supabase_connected", { url: SUPABASE_URL });
+  } else {
+    log("warn", "supabase_missing", { reason: "SUPABASE_URL or KEY not set" });
+  }
+
+  // Execution Handler (Multi-tenant)
+  const executionHandler = new ExecutionHandler(
+    publicClient,
+    supabase,
+    CEX_SECRETS_KEY,
+    RPC_URL,
+    log
+  );
+
+  // Consumer Group Setup for Execution
+  const EXECUTION_STREAM_KEY = "execution.requests";
+  const EXECUTION_GROUP_NAME = "execution_group";
+  const EXECUTION_CONSUMER_NAME = `executor_${uuidv4()}`;
+
+  // Redis client for consuming execution requests (blocking)
+  const redisSub = new Redis(REDIS_URL);
+
+  try {
+    await redisSub.xgroup("CREATE", EXECUTION_STREAM_KEY, EXECUTION_GROUP_NAME, "$", "MKSTREAM");
+    log("info", "consumer_group_created", { group: EXECUTION_GROUP_NAME });
+  } catch (err: any) {
+    if (!err.message.includes("BUSYGROUP")) {
+      log("error", "xgroup_create_error", { error: err.message });
+    }
+  }
+
+  async function consumeExecutionStream() {
+    log("info", "starting_execution_consumer");
+    while (true) {
+      try {
+        const results = (await redisSub.call(
+          "XREADGROUP",
+          "GROUP",
+          EXECUTION_GROUP_NAME,
+          EXECUTION_CONSUMER_NAME,
+          "BLOCK",
+          "2000",
+          "COUNT",
+          "10",
+          "STREAMS",
+          EXECUTION_STREAM_KEY,
+          ">"
+        )) as any;
+
+        if (results) {
+          for (const [stream, messages] of results) {
+            for (const [id, fields] of messages) {
+              let dataStr: string | null = null;
+              for (let i = 0; i < fields.length; i += 2) {
+                if (fields[i] === "data") {
+                  dataStr = fields[i + 1];
+                  break;
+                }
+              }
+
+              if (dataStr) {
+                try {
+                  const request = JSON.parse(dataStr);
+                  await executionHandler.execute(request);
+                  await redisSub.xack(EXECUTION_STREAM_KEY, EXECUTION_GROUP_NAME, id);
+                } catch (err: any) {
+                  log("error", "execution_processing_failed", { id, error: err.message });
+                  await redisSub.xack(EXECUTION_STREAM_KEY, EXECUTION_GROUP_NAME, id);
+                }
+              } else {
+                await redisSub.xack(EXECUTION_STREAM_KEY, EXECUTION_GROUP_NAME, id);
+              }
+            }
+          }
+        }
+      } catch (err: any) {
+        log("error", "consume_error", { error: err.message });
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+  }
+
+  // Start consumer
+  consumeExecutionStream();
 
   // Fetch pool state from V4 StateView
   async function fetchPoolState(
@@ -243,17 +340,17 @@ async function main() {
           quotes: {
             csr_usdt: csrQuote
               ? {
-                  price: csrQuote.price,
-                  age_ms: now - csrQuote.ts,
-                  fresh: csrFresh,
-                }
+                price: csrQuote.price,
+                age_ms: now - csrQuote.ts,
+                fresh: csrFresh,
+              }
               : null,
             csr25_usdt: csr25Quote
               ? {
-                  price: csr25Quote.price,
-                  age_ms: now - csr25Quote.ts,
-                  fresh: csr25Fresh,
-                }
+                price: csr25Quote.price,
+                age_ms: now - csr25Quote.ts,
+                fresh: csr25Fresh,
+              }
               : null,
           },
           redis: redisPub.status,

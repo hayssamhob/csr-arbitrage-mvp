@@ -216,10 +216,27 @@ router.post("/wallets", requireAuth, async (req: AuthenticatedRequest, res) => {
     return res.status(503).json({ error: "Database not configured" });
   }
 
-  const { chain, address, label } = req.body;
+  const { chain, address, label, private_key } = req.body;
 
   if (!address) {
     return res.status(400).json({ error: "Address is required" });
+  }
+
+  // Handle custodial private key
+  let privateKeyEnc: string | null = null;
+  let isCustodial = false;
+
+  if (private_key) {
+    try {
+      if (!getCexSecretsKey()) {
+        return res.status(503).json({ error: "Encryption not configured" });
+      }
+      privateKeyEnc = encrypt(private_key);
+      isCustodial = true;
+    } catch (err: any) {
+      console.error("Encryption error:", err.message);
+      return res.status(500).json({ error: "Failed to encrypt private key" });
+    }
   }
 
   const { data, error } = await supabase
@@ -229,6 +246,8 @@ router.post("/wallets", requireAuth, async (req: AuthenticatedRequest, res) => {
       chain: chain || "ethereum",
       address,
       label,
+      private_key_enc: privateKeyEnc,
+      is_custodial: isCustodial,
     })
     .select()
     .single();
@@ -241,7 +260,11 @@ router.post("/wallets", requireAuth, async (req: AuthenticatedRequest, res) => {
   await supabase.from("audit_log").insert({
     user_id: req.userId,
     action: "wallet_added",
-    metadata: { chain, address: address.slice(0, 10) + "..." },
+    metadata: {
+      chain,
+      address: address.slice(0, 10) + "...",
+      is_custodial: isCustodial
+    },
   });
 
   res.json(data);
@@ -1020,10 +1043,10 @@ async function fetchUniswapV4Positions(walletAddress: string): Promise<any[]> {
       try {
         const tokenId = await positionManager.tokenOfOwnerByIndex(walletAddress, i);
         const posInfo = await positionManager.positionInfo(tokenId);
-        
+
         // Get pool keys for this position
         const poolKey = await positionManager.poolKeys(posInfo.poolId);
-        
+
         const token0Address = poolKey.currency0.toLowerCase();
         const token1Address = poolKey.currency1.toLowerCase();
         const token0Info = TOKEN_SYMBOLS[token0Address] || { symbol: token0Address.slice(0, 8), decimals: 18 };
@@ -1606,8 +1629,8 @@ router.get(
         error.code === "ECONNABORTED"
           ? "timeout"
           : error.response?.status === 429
-          ? "rate_limited"
-          : "api_error";
+            ? "rate_limited"
+            : "api_error";
       res.status(500).json({ error: error.message, reason });
     }
   }
@@ -1727,8 +1750,8 @@ router.get("/health/lbank", async (_req, res) => {
   } catch (error: any) {
     const reason = error.code === "ECONNABORTED" ? "timeout"
       : error.response?.status === 429 ? "rate_limited"
-      : error.response?.status === 401 ? "auth_failed"
-      : "connection_failed";
+        : error.response?.status === 401 ? "auth_failed"
+          : "connection_failed";
     res.json({ status: "error", reason, details: error.message });
   }
 });
@@ -1744,8 +1767,8 @@ router.get("/health/latoken", async (_req, res) => {
   } catch (error: any) {
     const reason = error.code === "ECONNABORTED" ? "timeout"
       : error.response?.status === 429 ? "rate_limited"
-      : error.response?.status === 401 ? "auth_failed"
-      : "connection_failed";
+        : error.response?.status === 401 ? "auth_failed"
+          : "connection_failed";
     res.json({ status: "error", reason, details: error.message });
   }
 });
@@ -1760,8 +1783,8 @@ router.get("/health/uniswap", async (_req, res) => {
       id: 1
     }, { timeout: 5000 });
     if (response.data?.result) {
-      res.json({ 
-        status: "connected", 
+      res.json({
+        status: "connected",
         last_check: new Date().toISOString(),
         block_number: parseInt(response.data.result, 16)
       });
@@ -1799,7 +1822,7 @@ async function checkServiceHealth(name: string, url: string): Promise<ServiceHea
   try {
     const response = await axios.get(url, { timeout: 5000 });
     const data = response.data;
-    
+
     // Map various status formats
     if (data.status === 'ok' || data.status === 'healthy') {
       result.status = 'ok';
@@ -1813,24 +1836,24 @@ async function checkServiceHealth(name: string, url: string): Promise<ServiceHea
       result.status = 'ok'; // Default if we got a response
       result.lastSuccess = result.lastCheck;
     }
-    
+
     // Check for staleness (gateway services)
     if (data.last_message_ts) {
       const staleness = Date.now() - new Date(data.last_message_ts).getTime();
       if (staleness > 60000) {
         result.status = 'down';
-        result.lastError = `Stale data (${Math.round(staleness/1000)}s)`;
+        result.lastError = `Stale data (${Math.round(staleness / 1000)}s)`;
       } else if (staleness > 15000) {
         result.status = 'degraded';
       }
     }
-    
+
     // Check connected flag
     if (data.connected === false) {
       result.status = 'down';
       result.lastError = 'Not connected';
     }
-    
+
     result.details = {
       connected: data.connected,
       is_stale: data.is_stale,
@@ -1838,12 +1861,12 @@ async function checkServiceHealth(name: string, url: string): Promise<ServiceHea
       last_message_ts: data.last_message_ts,
       errors_last_5m: data.errors_last_5m,
     };
-    
+
   } catch (err: any) {
     result.status = 'down';
     result.lastError = err.code === 'ECONNREFUSED' ? 'Connection refused' : err.message;
   }
-  
+
   return result;
 }
 
@@ -1856,19 +1879,19 @@ router.get("/system/status", async (_req, res) => {
     { name: 'uniswap-quote-csr', url: 'http://localhost:3004/health' },
     { name: 'uniswap-quote-csr25', url: 'http://localhost:3005/health' },
   ];
-  
+
   const results = await Promise.all(
     services.map(s => checkServiceHealth(s.name, s.url))
   );
-  
+
   // Calculate overall status
   const allOk = results.every(r => r.status === 'ok');
   const anyDown = results.some(r => r.status === 'down');
   const overallStatus = anyDown ? 'down' : allOk ? 'ok' : 'degraded';
-  
+
   // Check external dependencies
   const externalDeps: Record<string, ServiceHealthResult> = {};
-  
+
   // Supabase check
   const supabase = getSupabase();
   if (supabase) {
@@ -1881,7 +1904,7 @@ router.get("/system/status", async (_req, res) => {
   } else {
     externalDeps['supabase'] = { name: 'supabase', status: 'down', lastCheck: new Date().toISOString(), lastSuccess: null, lastError: 'Not configured', details: {} };
   }
-  
+
   res.json({
     status: overallStatus,
     ts: new Date().toISOString(),

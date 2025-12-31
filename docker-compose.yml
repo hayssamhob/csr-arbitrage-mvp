@@ -85,6 +85,9 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
       - SYMBOLS=csr_usdt,csr25_usdt
       - HTTP_PORT=3001
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - CEX_SECRETS_KEY=${CEX_SECRETS_KEY}
     ports:
       - "127.0.0.1:3001:3001"
     depends_on:
@@ -101,6 +104,9 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
       - SYMBOLS=CSR/USDT
       - HTTP_PORT=3003
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - CEX_SECRETS_KEY=${CEX_SECRETS_KEY}
     ports:
       - "127.0.0.1:3006:3003"
     depends_on:
@@ -116,6 +122,10 @@ services:
     environment:
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
       - RPC_URL=${RPC_URL}
+      - PRIVATE_KEY=${PRIVATE_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - CEX_SECRETS_KEY=${CEX_SECRETS_KEY}
       - HTTP_PORT=3002
     ports:
       - "127.0.0.1:3002:3002"

@@ -136,6 +136,103 @@ async function main(): Promise<void> {
   lbankClient.on('error', trackError);
   lbankClient.connect();
 
+  // Supabase Client
+  const SUPABASE_URL = config.SUPABASE_URL;
+  const SUPABASE_KEY = config.SUPABASE_SERVICE_ROLE_KEY;
+  const CEX_SECRETS_KEY = config.CEX_SECRETS_KEY;
+
+  let supabase: any = null;
+  if (SUPABASE_URL && SUPABASE_KEY) {
+    const { createClient } = require('@supabase/supabase-js');
+    supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+    log('info', 'supabase_connected', { url: SUPABASE_URL });
+  } else {
+    log('warn', 'supabase_missing', { reason: "SUPABASE_URL or KEY not set" });
+  }
+
+  // Execution Handler
+  const { ExecutionHandler } = require('./execution');
+  const executionHandler = new ExecutionHandler(
+    supabase,
+    CEX_SECRETS_KEY,
+    (level: any, event: any, data: any) => log(level, event, data)
+  );
+
+  // Redis Consumer Group for Excution
+  const EXECUTION_STREAM = 'execution.requests';
+  const GROUP_NAME = 'lbank-executor-group';
+  const CONSUMER_NAME = `lbank-executor-${uuidv4().substring(0, 8)}`;
+
+  try {
+    await redis.xgroup('CREATE', EXECUTION_STREAM, GROUP_NAME, '$', 'MKSTREAM');
+    log('info', 'consumer_group_created', { group: GROUP_NAME });
+  } catch (err: any) {
+    if (!err.message.includes('BUSYGROUP')) {
+      log('warn', 'consumer_group_init_error', { error: err.message });
+    }
+  }
+
+  // Execution Loop
+  async function consumeExecutionStream() {
+    while (true) {
+      try {
+        // Use call() to avoid TypeScript strict checks on xreadgroup overloads
+        const results: any = await (redis as any).call(
+          'XREADGROUP',
+          'GROUP', GROUP_NAME,
+          CONSUMER_NAME,
+          'BLOCK', '5000',
+          'COUNT', '1',
+          'STREAMS', EXECUTION_STREAM, '>'
+        );
+
+        if (results && Array.isArray(results)) {
+          for (const streamEntry of results) {
+            const [streamName, messages] = streamEntry;
+            for (const msgEntry of messages) {
+              const [id, fields] = msgEntry;
+              // Parse message fields (array of strings)
+              const data: Record<string, string> = {};
+              for (let i = 0; i < fields.length; i += 2) {
+                data[fields[i]] = fields[i + 1];
+              }
+
+              if (data.type === 'execution.request' && (data.venue === 'lbank' || !data.venue)) {
+                try {
+                  const payload = {
+                    type: data.type,
+                    eventId: data.eventId,
+                    runId: data.runId,
+                    userId: data.userId,
+                    symbol: data.symbol,
+                    direction: data.direction,
+                    sizeUsdt: parseFloat(data.sizeUsdt),
+                    minProfitBps: parseFloat(data.minProfitBps)
+                  };
+
+                  if (payload.symbol.toLowerCase().includes('csr')) {
+                    await executionHandler.execute(payload);
+                  }
+                } catch (execErr: any) {
+                  log('error', 'execution_processing_failed', { error: execErr.message });
+                }
+              }
+
+              // Acknowledge message
+              await redis.xack(EXECUTION_STREAM, GROUP_NAME, id);
+            }
+          }
+        }
+      } catch (err: any) {
+        log('error', 'execution_consumer_error', { error: err.message });
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+    }
+  }
+
+  // Start Consumer (fire and forget)
+  consumeExecutionStream();
+
   // Health Server (Keep mostly same for compatibility)
   const healthApp = createHealthServer(lbankClient, config, symbols, getErrorCount);
   healthApp.listen(config.HTTP_PORT, () => {
