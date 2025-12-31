@@ -1,12 +1,16 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import Redis from 'ioredis';
-import http from 'http';
+import http from "http";
+import Redis from "ioredis";
 import { v4 as uuidv4 } from 'uuid';
 import { loadConfig } from './config';
 // Shared imports
-import { MarketTick, TOPICS, BusMessageSchema } from '../../../packages/shared/src';
+import {
+  BusMessageSchema,
+  MarketTick,
+  TOPICS,
+} from "../../../packages/shared/src";
 
 // ============================================================================
 // Strategy Engine
@@ -37,7 +41,7 @@ interface MarketState {
 const orderBook: Record<string, Record<string, MarketState>> = {};
 
 async function main() {
-  log('info', 'starting', { version: '2.0.0-redis' });
+  log("info", "starting", { version: "2.0.0-redis" });
   const config = loadConfig();
 
   // Redis Clients
@@ -48,15 +52,15 @@ async function main() {
 
   // Group Consumer setup (Idempotent)
   const STREAM_KEY = TOPICS.MARKET_DATA;
-  const GROUP_NAME = 'strategy_group';
+  const GROUP_NAME = "strategy_group";
   const CONSUMER_NAME = `strategy_${uuidv4()}`;
 
   try {
-    await redisSub.xgroup('CREATE', STREAM_KEY, GROUP_NAME, '$', 'MKSTREAM');
-    log('info', 'consumer_group_created');
+    await redisSub.xgroup("CREATE", STREAM_KEY, GROUP_NAME, "$", "MKSTREAM");
+    log("info", "consumer_group_created");
   } catch (err: any) {
-    if (!err.message.includes('BUSYGROUP')) {
-      log('error', 'xgroup_create_error', { error: err.message });
+    if (!err.message.includes("BUSYGROUP")) {
+      log("error", "xgroup_create_error", { error: err.message });
     }
   }
 
@@ -66,19 +70,19 @@ async function main() {
       try {
         // Read new messages using generic call to satisfy TS and avoid signature mismatch
         // XREADGROUP GROUP group consumers [COUNT n] [BLOCK ms] STREAMS key >
-        const results = await redisSub.call(
-          'XREADGROUP',
-          'GROUP',
+        const results = (await redisSub.call(
+          "XREADGROUP",
+          "GROUP",
           GROUP_NAME,
           CONSUMER_NAME,
-          'BLOCK',
-          '2000',
-          'COUNT',
-          '10',
-          'STREAMS',
+          "BLOCK",
+          "2000",
+          "COUNT",
+          "10",
+          "STREAMS",
           STREAM_KEY,
-          '>'
-        ) as any;
+          ">"
+        )) as any;
 
         if (results) {
           // results: [[streamName, [[id, [field, value, ...]]]]]
@@ -88,7 +92,7 @@ async function main() {
               // we want value of 'data'
               let dataStr: string | null = null;
               for (let i = 0; i < fields.length; i += 2) {
-                if (fields[i] === 'data') {
+                if (fields[i] === "data") {
                   dataStr = fields[i + 1];
                   break;
                 }
@@ -103,14 +107,17 @@ async function main() {
                 const raw = JSON.parse(dataStr);
                 const event = BusMessageSchema.parse(raw); // Runtime validate
 
-                if (event.type === 'market.tick') {
+                if (event.type === "market.tick") {
                   onMarketTick(event);
                 }
 
                 // Ack message
                 await redisSub.xack(STREAM_KEY, GROUP_NAME, id);
               } catch (parseErr) {
-                log('warn', 'message_parse_failed', { id, error: String(parseErr) });
+                log("warn", "message_parse_failed", {
+                  id,
+                  error: String(parseErr),
+                });
                 // Ack anyway to not get stuck? Or move to DLQ?
                 // For MVP ack to move on
                 await redisSub.xack(STREAM_KEY, GROUP_NAME, id);
@@ -119,8 +126,8 @@ async function main() {
           }
         }
       } catch (err: any) {
-        log('error', 'consume_error', { error: err.message });
-        await new Promise(r => setTimeout(r, 1000)); // Backoff
+        log("error", "consume_error", { error: err.message });
+        await new Promise((r) => setTimeout(r, 1000)); // Backoff
       }
     }
   }
@@ -149,8 +156,8 @@ async function main() {
 
     // Check LBank vs Uniswap V4
     // We need Bid on A, Ask on B
-    const cex = venues['lbank'] || venues['latoken']; // Prefer LBank, fallback Latoken? Or treat separately
-    const dex = venues['uniswap_v4'];
+    const cex = venues["lbank"] || venues["latoken"]; // Prefer LBank, fallback Latoken? Or treat separately
+    const dex = venues["uniswap_v4"];
 
     if (!cex || !dex) return;
 
@@ -167,30 +174,35 @@ async function main() {
 
       if (bps > config.MIN_EDGE_BPS) {
         const runId = uuidv4();
-        log('info', 'opportunity_found', {
+        log("info", "opportunity_found", {
           runId,
-          direction: 'CEX->DEX',
+          direction: "CEX->DEX",
           symbol,
           cex: cex.venue,
           buyAt: cexAsk,
           sellAt: dexBid,
-          bps: Math.round(bps)
+          bps: Math.round(bps),
         });
 
         // Publish Execution Request (Simulating Strategy -> Execution direct link)
         const request = {
-          type: 'execution.request',
+          type: "execution.request",
           eventId: uuidv4(),
           runId,
           symbol,
-          direction: 'buy_cex_sell_dex', // Simplified direction
+          direction: "buy_cex_sell_dex", // Simplified direction
           sizeUsdt: config.QUOTE_SIZE_USDT,
           minProfitBps: config.MIN_EDGE_BPS,
-          ts: Date.now()
+          ts: Date.now(),
         };
 
         // Publish to execution stream
-        redisPub.xadd(TOPICS.EXECUTION_REQUESTS, '*', 'data', JSON.stringify(request));
+        redisPub.xadd(
+          TOPICS.EXECUTION_REQUESTS,
+          "*",
+          "data",
+          JSON.stringify(request)
+        );
         redisPub.publish(TOPICS.EXECUTION_REQUESTS, JSON.stringify(request));
       }
     }
@@ -206,28 +218,33 @@ async function main() {
 
       if (bps > config.MIN_EDGE_BPS) {
         const runId = uuidv4();
-        log('info', 'opportunity_found', {
+        log("info", "opportunity_found", {
           runId,
-          direction: 'DEX->CEX',
+          direction: "DEX->CEX",
           symbol,
           cex: cex.venue,
           buyAt: dexAsk,
           sellAt: cexBid,
-          bps: Math.round(bps)
+          bps: Math.round(bps),
         });
 
         const request = {
-          type: 'execution.request',
+          type: "execution.request",
           eventId: uuidv4(),
           runId,
           symbol,
-          direction: 'buy_dex_sell_cex',
+          direction: "buy_dex_sell_cex",
           sizeUsdt: config.QUOTE_SIZE_USDT,
           minProfitBps: config.MIN_EDGE_BPS,
-          ts: Date.now()
+          ts: Date.now(),
         };
 
-        redisPub.xadd(TOPICS.EXECUTION_REQUESTS, '*', 'data', JSON.stringify(request));
+        redisPub.xadd(
+          TOPICS.EXECUTION_REQUESTS,
+          "*",
+          "data",
+          JSON.stringify(request)
+        );
         redisPub.publish(TOPICS.EXECUTION_REQUESTS, JSON.stringify(request));
       }
     }
@@ -237,42 +254,150 @@ async function main() {
   consumeStream();
 
   // Keep alive
-  log('info', 'strategy_engine_started');
+  log("info", "strategy_engine_started");
 
-  // Health Check Server
+  // Build market state for API responses
+  function getMarketState() {
+    const now = new Date().toISOString();
+
+    // CSR/USDT - LATOKEN is CEX, Uniswap is DEX
+    const csrLatoken =
+      orderBook["csr/usdt"]?.["latoken"] || orderBook["CSR/USDT"]?.["latoken"];
+    const csrUniswap =
+      orderBook["csr_usdt"]?.["uniswap_v4"] ||
+      orderBook["csr/usdt"]?.["uniswap_v4"];
+
+    // CSR25/USDT - LBank is CEX, Uniswap is DEX
+    const csr25Lbank =
+      orderBook["csr25_usdt"]?.["lbank"] || orderBook["csr25/usdt"]?.["lbank"];
+    const csr25Uniswap =
+      orderBook["csr25_usdt"]?.["uniswap_v4"] ||
+      orderBook["csr25/usdt"]?.["uniswap_v4"];
+
+    return {
+      ts: now,
+      csr_usdt: {
+        latoken_ticker: csrLatoken
+          ? {
+              type: "latoken.ticker",
+              symbol: "csr/usdt",
+              ts: new Date(csrLatoken.ts).toISOString(),
+              bid: csrLatoken.bid || csrLatoken.last,
+              ask: csrLatoken.ask || csrLatoken.last,
+              last: csrLatoken.last,
+              volume_24h: 0,
+            }
+          : null,
+        lbank_ticker: null, // CSR not on LBank
+        uniswap_quote: csrUniswap
+          ? {
+              type: "uniswap.quote",
+              pair: "csr_usdt",
+              chain_id: 1,
+              ts: new Date(csrUniswap.ts).toISOString(),
+              effective_price_usdt: csrUniswap.last || csrUniswap.bid,
+              is_stale: Date.now() - csrUniswap.ts > 60000,
+            }
+          : null,
+        decision: null,
+      },
+      csr25_usdt: {
+        lbank_ticker: csr25Lbank
+          ? {
+              type: "lbank.ticker",
+              symbol: "csr25_usdt",
+              ts: new Date(csr25Lbank.ts).toISOString(),
+              bid: csr25Lbank.bid || csr25Lbank.last,
+              ask: csr25Lbank.ask || csr25Lbank.last,
+              last: csr25Lbank.last,
+              volume_24h: 0,
+            }
+          : null,
+        latoken_ticker: null, // CSR25 not on LATOKEN
+        uniswap_quote: csr25Uniswap
+          ? {
+              type: "uniswap.quote",
+              pair: "csr25_usdt",
+              chain_id: 1,
+              ts: new Date(csr25Uniswap.ts).toISOString(),
+              effective_price_usdt: csr25Uniswap.last || csr25Uniswap.bid,
+              is_stale: Date.now() - csr25Uniswap.ts > 60000,
+            }
+          : null,
+        decision: null,
+      },
+      is_stale: false,
+    };
+  }
+
+  // Health Check Server with /state and /decision endpoints
   const HTTP_PORT = process.env.HTTP_PORT || 3005;
   const server = http.createServer((req, res) => {
-    if (req.url === '/health') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        status: 'healthy',
-        service: 'strategy',
-        version: '2.0.0-redis'
-      }));
+    res.setHeader("Content-Type", "application/json");
+
+    if (req.url === "/health") {
+      res.writeHead(200);
+      res.end(
+        JSON.stringify({
+          status: "healthy",
+          service: "strategy",
+          version: "3.0.0-redis",
+          ts: new Date().toISOString(),
+        })
+      );
+    } else if (req.url === "/state") {
+      res.writeHead(200);
+      res.end(JSON.stringify(getMarketState()));
+    } else if (req.url === "/decision") {
+      // Return current arbitrage opportunities
+      const state = getMarketState();
+      res.writeHead(200);
+      res.end(
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          csr_usdt: {
+            would_trade: false,
+            reason:
+              state.csr_usdt.latoken_ticker && state.csr_usdt.uniswap_quote
+                ? "spread_too_small"
+                : "missing_data",
+          },
+          csr25_usdt: {
+            would_trade: false,
+            reason:
+              state.csr25_usdt.lbank_ticker && state.csr25_usdt.uniswap_quote
+                ? "spread_too_small"
+                : "missing_data",
+          },
+        })
+      );
+    } else if (req.url === "/orderbook") {
+      // Debug endpoint to see raw orderbook state
+      res.writeHead(200);
+      res.end(JSON.stringify(orderBook));
     } else {
       res.writeHead(404);
-      res.end();
+      res.end(JSON.stringify({ error: "not_found" }));
     }
   });
 
   server.listen(HTTP_PORT, () => {
-    log('info', 'http_server_started', { port: HTTP_PORT });
+    log("info", "http_server_started", { port: HTTP_PORT });
   });
 
   // Graceful shutdown
   const shutdown = async () => {
-    log('info', 'shutting_down');
+    log("info", "shutting_down");
     server.close();
     await redisSub.quit();
     await redisPub.quit();
     process.exit(0);
   };
-  process.on('SIGTERM', shutdown);
-  process.on('SIGINT', shutdown);
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }
 
 main().catch((err) => {
   log('error', 'startup_failed', { error: String(err) });
   process.exit(1);
 });
-

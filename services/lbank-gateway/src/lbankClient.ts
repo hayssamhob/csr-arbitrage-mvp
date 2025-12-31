@@ -314,13 +314,10 @@ export class LBankClient extends EventEmitter {
   private startPing(): void {
     this.clearPingTimer();
 
+    // LBank server sends pings, we respond with pongs
+    // Client only needs to monitor for staleness, not send proactive pings
     this.pingTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
-        // LBank V2 WebSocket ping format
-        const pingMsg = JSON.stringify({ ping: Date.now().toString() });
-        this.ws.send(pingMsg);
-        this.onLog("debug", "ping_sent");
-
         // Check for staleness - force reconnect if no data for 60s
         if (this.lastMessageTs) {
           const lastMsgTime = new Date(this.lastMessageTs).getTime();
