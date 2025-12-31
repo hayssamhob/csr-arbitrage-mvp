@@ -6,7 +6,6 @@
  * - DEX Snapshot (Execution price, Gas, Slippage)
  */
 
-import { useState } from "react";
 import { formatPrice } from "../lib/alignmentEngine";
 
 // Trading links for each token
@@ -61,177 +60,138 @@ export function MarketContextCard({
   token,
   cexData,
   dexData,
-  defaultExpanded = false,
 }: MarketContextCardProps) {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
-
-  const cexMid = cexData ? (cexData.bid + cexData.ask) / 2 : 0;
 
   return (
-    <div className="rounded-2xl overflow-hidden">
-      {/* Header - Always visible */}
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-5 py-4 flex items-center justify-between text-left bg-slate-950/30 hover:bg-slate-950/50 transition-all duration-300 border border-slate-800/50 rounded-2xl group"
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-slate-800/50 flex items-center justify-center group-hover:bg-slate-800 transition-colors">
-            <span className="text-sm">📊</span>
-          </div>
-          <div>
-            <span className="text-sm font-bold text-slate-200 block">
-              Market Context
-            </span>
-            <span className="text-[10px] text-slate-500 font-medium">
-              {token}
-            </span>
-          </div>
+    <div>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-8 h-8 rounded-xl bg-slate-800/50 flex items-center justify-center">
+          <span className="text-sm">📊</span>
         </div>
-        <div className="flex items-center gap-4">
-          {cexData && (
-            <div className="text-right">
-              <span className="text-[10px] text-slate-500 block uppercase tracking-wider">
-                Mid
-              </span>
-              <span className="text-sm font-mono font-bold text-white">
-                ${formatPrice(cexMid)}
-              </span>
+        <div>
+          <span className="text-sm font-bold text-slate-200 block">
+            Market Context
+          </span>
+          <span className="text-[10px] text-slate-500 font-medium">
+            {token}
+          </span>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        {/* CEX Snapshot */}
+        <div className="bg-slate-950/30 rounded-2xl p-4 border border-slate-800/30">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+              CEX
+            </span>
+            <a
+              href={TRADING_LINKS[token].cex.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] font-bold text-emerald-500 hover:text-emerald-400 transition-colors flex items-center gap-1"
+            >
+              {TRADING_LINKS[token].cex.name}
+              <span className="text-emerald-500/50">↗</span>
+            </a>
+          </div>
+
+          {cexData ? (
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500">Bid</span>
+                <span className="font-mono text-sm font-bold text-emerald-400">
+                  ${formatPrice(cexData.bid)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500">Ask</span>
+                <span className="font-mono text-sm font-bold text-red-400">
+                  ${formatPrice(cexData.ask)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500">Last</span>
+                <span className="font-mono text-sm font-bold text-slate-300">
+                  ${formatPrice(cexData.last)}
+                </span>
+              </div>
+              <div className="pt-3 mt-3 border-t border-slate-800/50">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500">Vol 24h</span>
+                  <span className="font-mono text-xs text-slate-400">
+                    {cexData.volume24h.toLocaleString()}
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-600 text-right mt-2">
+                  {cexData.timestamp}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-6">
+              <div className="w-10 h-10 rounded-xl bg-slate-800/50 mx-auto mb-2 flex items-center justify-center">
+                <span className="text-slate-600">—</span>
+              </div>
+              <span className="text-xs text-slate-600">No CEX data</span>
             </div>
           )}
-          <div
-            className={`w-6 h-6 rounded-lg bg-slate-800/50 flex items-center justify-center transition-all duration-300 ${
-              isExpanded ? "rotate-180 bg-emerald-500/20" : ""
-            }`}
-          >
-            <span
-              className={`text-xs ${
-                isExpanded ? "text-emerald-400" : "text-slate-500"
-              }`}
-            >
-              ▼
+        </div>
+
+        {/* DEX Snapshot */}
+        <div className="bg-slate-950/30 rounded-2xl p-4 border border-slate-800/30">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+              DEX
             </span>
+            <a
+              href={TRADING_LINKS[token].dex.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] font-bold text-blue-500 hover:text-blue-400 transition-colors flex items-center gap-1"
+            >
+              Uniswap
+              <span className="text-blue-500/50">↗</span>
+            </a>
           </div>
-        </div>
-      </button>
 
-      {/* Expanded Content */}
-      {isExpanded && (
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          {/* CEX Snapshot */}
-          <div className="bg-slate-950/30 rounded-2xl p-4 border border-slate-800/30">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                CEX
-              </span>
-              <a
-                href={TRADING_LINKS[token].cex.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[10px] font-bold text-emerald-500 hover:text-emerald-400 transition-colors flex items-center gap-1"
-              >
-                {TRADING_LINKS[token].cex.name}
-                <span className="text-emerald-500/50">↗</span>
-              </a>
+          {dexData ? (
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500">Exec Price</span>
+                <span className="font-mono text-sm font-bold text-blue-400">
+                  ${formatPrice(dexData.executionPrice)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500">Quote Size</span>
+                <span className="font-mono text-sm font-bold text-slate-300">
+                  ${dexData.quoteSize}
+                </span>
+              </div>
+              {dexData.gasEstimateUsdt !== null && (
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-slate-500">Gas Est.</span>
+                  <span className="font-mono text-sm font-bold text-slate-400">
+                    ${dexData.gasEstimateUsdt.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              <div className="pt-3 mt-3 border-t border-slate-800/50">
+                <div className="text-[10px] text-slate-600 text-right">
+                  {dexData.timestamp}
+                </div>
+              </div>
             </div>
-
-            {cexData ? (
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500">Bid</span>
-                  <span className="font-mono text-sm font-bold text-emerald-400">
-                    ${formatPrice(cexData.bid)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500">Ask</span>
-                  <span className="font-mono text-sm font-bold text-red-400">
-                    ${formatPrice(cexData.ask)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500">Last</span>
-                  <span className="font-mono text-sm font-bold text-slate-300">
-                    ${formatPrice(cexData.last)}
-                  </span>
-                </div>
-                <div className="pt-3 mt-3 border-t border-slate-800/50">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-slate-500">Vol 24h</span>
-                    <span className="font-mono text-xs text-slate-400">
-                      {cexData.volume24h.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-slate-600 text-right mt-2">
-                    {cexData.timestamp}
-                  </div>
-                </div>
+          ) : (
+            <div className="text-center py-6">
+              <div className="w-10 h-10 rounded-xl bg-slate-800/50 mx-auto mb-2 flex items-center justify-center">
+                <span className="text-slate-600">—</span>
               </div>
-            ) : (
-              <div className="text-center py-6">
-                <div className="w-10 h-10 rounded-xl bg-slate-800/50 mx-auto mb-2 flex items-center justify-center">
-                  <span className="text-slate-600">—</span>
-                </div>
-                <span className="text-xs text-slate-600">No CEX data</span>
-              </div>
-            )}
-          </div>
-
-          {/* DEX Snapshot */}
-          <div className="bg-slate-950/30 rounded-2xl p-4 border border-slate-800/30">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                DEX
-              </span>
-              <a
-                href={TRADING_LINKS[token].dex.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[10px] font-bold text-blue-500 hover:text-blue-400 transition-colors flex items-center gap-1"
-              >
-                Uniswap
-                <span className="text-blue-500/50">↗</span>
-              </a>
+              <span className="text-xs text-slate-600">No DEX data</span>
             </div>
-
-            {dexData ? (
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500">Exec Price</span>
-                  <span className="font-mono text-sm font-bold text-blue-400">
-                    ${formatPrice(dexData.executionPrice)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500">Quote Size</span>
-                  <span className="font-mono text-sm font-bold text-slate-300">
-                    ${dexData.quoteSize}
-                  </span>
-                </div>
-                {dexData.gasEstimateUsdt !== null && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-slate-500">Gas Est.</span>
-                    <span className="font-mono text-sm font-bold text-slate-400">
-                      ${dexData.gasEstimateUsdt.toFixed(2)}
-                    </span>
-                  </div>
-                )}
-                <div className="pt-3 mt-3 border-t border-slate-800/50">
-                  <div className="text-[10px] text-slate-600 text-right">
-                    {dexData.timestamp}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-6">
-                <div className="w-10 h-10 rounded-xl bg-slate-800/50 mx-auto mb-2 flex items-center justify-center">
-                  <span className="text-slate-600">—</span>
-                </div>
-                <span className="text-xs text-slate-600">No DEX data</span>
-              </div>
-            )}
-          </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
