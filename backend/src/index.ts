@@ -27,14 +27,10 @@ const LBANK_GATEWAY_URL =
   process.env.LBANK_GATEWAY_URL || "http://localhost:3001";
 const LATOKEN_GATEWAY_URL =
   process.env.LATOKEN_GATEWAY_URL || "http://localhost:3006";
-const UNISWAP_QUOTE_URL =
+const UNISWAP_V4_GATEWAY_URL =
   process.env.UNISWAP_QUOTE_URL || "http://localhost:3002";
-const UNISWAP_QUOTE_CSR_URL =
-  process.env.UNISWAP_QUOTE_CSR_URL || "http://localhost:3005";
 const STRATEGY_ENGINE_URL =
   process.env.STRATEGY_ENGINE_URL || "http://localhost:3003";
-const UNISWAP_SCRAPER_URL =
-  process.env.UNISWAP_SCRAPER_URL || "http://localhost:3010";
 
 // Types
 interface ServiceHealth {
@@ -67,7 +63,6 @@ interface MarketData {
   lbank_ticker?: any;
   latoken_ticker?: any;
   uniswap_quote?: any;
-  scraper_quotes?: ScraperQuote[];
   decision?: any;
 }
 
@@ -84,8 +79,7 @@ interface DashboardData {
     ts: string;
     lbank_gateway: ServiceHealth;
     latoken_gateway: ServiceHealth;
-    uniswap_quote_csr25: ServiceHealth;
-    uniswap_quote_csr: ServiceHealth;
+    uniswap_v4_gateway: ServiceHealth;
     strategy_engine: ServiceHealth;
     overall_status: string;
   };
@@ -115,17 +109,8 @@ let dashboardData: DashboardData = {
       reconnect_count: 0,
       errors_last_5m: 0,
     },
-    uniswap_quote_csr25: {
-      service: "uniswap-quote-csr25",
-      status: "unknown",
-      ts: new Date().toISOString(),
-      is_stale: true,
-      connected: false,
-      reconnect_count: 0,
-      errors_last_5m: 0,
-    },
-    uniswap_quote_csr: {
-      service: "uniswap-quote-csr",
+    uniswap_v4_gateway: {
+      service: "uniswap-v4-gateway",
       status: "unknown",
       ts: new Date().toISOString(),
       is_stale: true,
@@ -269,13 +254,13 @@ async function fetchServiceData() {
       };
     }
 
-    // Fetch Uniswap Quote health for CSR25
-    let uniswapHealthCSR25: ServiceHealth | undefined;
+    // Fetch Uniswap V4 Gateway health
+    let uniswapHealth: ServiceHealth | undefined;
     try {
-      const resp = await httpClient.get(`${UNISWAP_QUOTE_URL}/health`);
+      const resp = await httpClient.get(`${UNISWAP_V4_GATEWAY_URL}/health`);
       const data = resp.data;
-      uniswapHealthCSR25 = {
-        service: "uniswap-quote-csr25",
+      uniswapHealth = {
+        service: "uniswap-v4-gateway",
         status: data.status || "ok",
         ts: data.ts || now,
         is_stale: false,
@@ -284,34 +269,8 @@ async function fetchServiceData() {
         errors_last_5m: 0,
       };
     } catch {
-      uniswapHealthCSR25 = {
-        service: "uniswap-quote-csr25",
-        status: "error",
-        ts: now,
-        is_stale: true,
-        connected: false,
-        reconnect_count: 0,
-        errors_last_5m: 0,
-      };
-    }
-
-    // Fetch Uniswap Quote health for CSR
-    let uniswapHealthCSR: ServiceHealth | undefined;
-    try {
-      const resp = await httpClient.get(`${UNISWAP_QUOTE_CSR_URL}/health`);
-      const data = resp.data;
-      uniswapHealthCSR = {
-        service: "uniswap-quote-csr",
-        status: data.status || "ok",
-        ts: data.ts || now,
-        is_stale: false,
-        connected: true,
-        reconnect_count: 0,
-        errors_last_5m: 0,
-      };
-    } catch {
-      uniswapHealthCSR = {
-        service: "uniswap-quote-csr",
+      uniswapHealth = {
+        service: "uniswap-v4-gateway",
         status: "error",
         ts: now,
         is_stale: true,
@@ -350,37 +309,14 @@ async function fetchServiceData() {
       };
     }
 
-    // Fetch scraper quotes (UI-scraped V4 prices)
-    let scraperQuotes: { CSR: ScraperQuote[]; CSR25: ScraperQuote[] } = {
-      CSR: [],
-      CSR25: [],
-    };
-    try {
-      const resp = await httpClient.get(`${UNISWAP_SCRAPER_URL}/quotes`);
-      if (resp.data?.quotes) {
-        for (const quote of resp.data.quotes) {
-          if (quote.outputToken === "CSR") {
-            scraperQuotes.CSR.push(quote);
-          } else if (quote.outputToken === "CSR25") {
-            scraperQuotes.CSR25.push(quote);
-          }
-        }
-      }
-    } catch {
-      // Scraper not available - continue without scraper quotes
-    }
+    // Scraper logic removed in favor of V4 Gateway
+    let marketState: any;
+    let decision: any;
 
     // Fetch market state from strategy engine (includes both markets)
     try {
       const resp = await httpClient.get(`${STRATEGY_ENGINE_URL}/state`);
       marketState = resp.data;
-      // Add scraper quotes to market state
-      if (marketState.csr_usdt) {
-        marketState.csr_usdt.scraper_quotes = scraperQuotes.CSR;
-      }
-      if (marketState.csr25_usdt) {
-        marketState.csr25_usdt.scraper_quotes = scraperQuotes.CSR25;
-      }
     } catch {
       // Use default structure if strategy engine is down
       marketState = {
@@ -389,13 +325,11 @@ async function fetchServiceData() {
           lbank_ticker: null,
           uniswap_quote: null,
           decision: null,
-          scraper_quotes: scraperQuotes.CSR,
         },
         csr25_usdt: {
           lbank_ticker: null,
           uniswap_quote: null,
           decision: null,
-          scraper_quotes: scraperQuotes.CSR25,
         },
         is_stale: true,
       };
@@ -414,8 +348,7 @@ async function fetchServiceData() {
     const statuses = [
       lbankHealth?.status || "error",
       latokenHealth?.status || "error",
-      uniswapHealthCSR25?.status || "error",
-      uniswapHealthCSR?.status || "error",
+      uniswapHealth?.status || "error",
       strategyHealth?.status || "error",
     ];
 
@@ -480,8 +413,7 @@ async function fetchServiceData() {
         ts: now,
         lbank_gateway: lbankHealth,
         latoken_gateway: latokenHealth,
-        uniswap_quote_csr25: uniswapHealthCSR25,
-        uniswap_quote_csr: uniswapHealthCSR,
+        uniswap_v4_gateway: uniswapHealth,
         strategy_engine: strategyHealth,
         overall_status: overall,
       },
@@ -686,8 +618,7 @@ app.get("/api/system/status", async (req, res) => {
     { name: 'lbank-gateway', url: 'http://localhost:3001/ready' },
     { name: 'latoken-gateway', url: 'http://localhost:3006/ready' },
     { name: 'strategy', url: 'http://localhost:3003/ready' },
-    { name: 'uniswap-scraper', url: 'http://localhost:3010/health' },
-    { name: 'uniswap-quote-csr25', url: 'http://localhost:3002/health' },
+    { name: 'uniswap-v4-gateway', url: 'http://localhost:3002/health' },
   ];
 
   const results = await Promise.all(services.map(async (svc) => {
@@ -762,23 +693,7 @@ app.get("/api/config", (req, res) => {
   });
 });
 
-// Scraper quotes proxy endpoint
-app.get("/api/scraper/quotes", async (req, res) => {
-  try {
-    const response = await axios.get(`${UNISWAP_SCRAPER_URL}/quotes`, {
-      timeout: 5000,
-    });
-    res.json(response.data);
-  } catch (error: any) {
-    console.error("Failed to fetch scraper quotes:", error.message);
-    res.status(502).json({
-      error: "Scraper unavailable",
-      details: error.message,
-      quotes: [],
-      meta: { lastSuccessTs: null, errorsLast5m: 0 },
-    });
-  }
-});
+// Scraper quotes proxy removed (no longer used)
 
 // ============================================================
 // /api/alignment - AUTHORITATIVE endpoint for required trade sizes
