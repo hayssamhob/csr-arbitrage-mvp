@@ -1,161 +1,145 @@
-import { useState } from "react";
+import React, { useState } from 'react';
+import { PRESET_TOKENS } from '../constants/tokens';
+import { useUniswapSwap } from '../hooks/useUniswapSwap';
+import { useWallet } from '../hooks/useWallet';
 
-// Uniswap swap URLs per token - using #/swap route with field+value for amount prefill
-// Per Uniswap docs: https://docs.uniswap.org/contracts/v1/guides/custom-linking
-const UNISWAP_URLS = {
-  CSR: "https://app.uniswap.org/#/swap?inputCurrency=0xdAC17F958D2ee523a2206206994597C13D831ec7&outputCurrency=0x75Ecb52e403C617679FBd3e77A50f9d10A842387",
-  CSR25:
-    "https://app.uniswap.org/#/swap?inputCurrency=0xdAC17F958D2ee523a2206206994597C13D831ec7&outputCurrency=0x502E7230E142A332DFEd1095F7174834b2548982",
-} as const;
+export const UniswapTradePanel: React.FC = () => {
+  const { isConnected } = useWallet();
 
-interface UniswapTradePanelProps {
-  token: "CSR" | "CSR25";
-  direction: "buy" | "sell";
-  dexPrice: number;
-  cexPrice: number;
-  recommendedAmount?: number;
-  onClose: () => void;
-}
+  // State for token selection
+  const [selectedTokenSymbol, setSelectedTokenSymbol] = useState<string>(PRESET_TOKENS[0].symbol);
+  const [customTokenAddress, setCustomTokenAddress] = useState<string>('');
+  const [amount, setAmount] = useState<string>('');
+  const [tradeDirection, setTradeDirection] = useState<'buy' | 'sell'>('buy');
 
-export function UniswapTradePanel({
-  token,
-  direction,
-  dexPrice,
-  cexPrice,
-  recommendedAmount,
-  onClose,
-}: UniswapTradePanelProps) {
-  // Use recommended amount as default, fall back to 100
-  const [amount, setAmount] = useState(recommendedAmount?.toString() || "100");
+  // Derive the active address based on selection
+  const activeTokenAddress = React.useMemo(() => {
+    if (selectedTokenSymbol === 'CUSTOM') {
+      return customTokenAddress;
+    }
+    const token = PRESET_TOKENS.find(t => t.symbol === selectedTokenSymbol);
+    return token ? token.address : '';
+  }, [selectedTokenSymbol, customTokenAddress]);
 
-  const inputToken = direction === "buy" ? "USDT" : token;
-  const outputToken = direction === "buy" ? token : "USDT";
+  // Hook for swap logic
+  const { executeSwap, isLoading, error, txHash } = useUniswapSwap();
 
-  // Calculate estimated output based on DEX price
-  const estimatedOutput =
-    direction === "buy"
-      ? dexPrice > 0
-        ? (parseFloat(amount) / dexPrice).toFixed(2)
-        : "—"
-      : (parseFloat(amount) * dexPrice).toFixed(4);
-
-  // Calculate price deviation
-  const deviation =
-    cexPrice > 0 ? (((dexPrice - cexPrice) / cexPrice) * 100).toFixed(2) : "0";
-
-  // Build URL with amount pre-filled using field=input&value=X
-  // Per Uniswap docs: both field and value must be set
-  const baseUrl = UNISWAP_URLS[token];
-  const uniswapUrl = `${baseUrl}&field=input&value=${amount}`;
+  const handleSwap = async () => {
+    if (!activeTokenAddress || !amount) return;
+    await executeSwap(amount, activeTokenAddress, tradeDirection);
+  };
 
   return (
-    <div className="bg-slate-900 rounded-3xl p-6 border border-slate-800 shadow-2xl overflow-hidden relative">
-      <button
-        onClick={onClose}
-        className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors"
-      >
-        ✕
-      </button>
-
-      <div className="mb-6">
-        <h3 className="text-xl font-black text-white mb-1">
-          {direction === "buy" ? "🟢 Buy" : "🔴 Sell"} {token}
-        </h3>
-        <p className="text-slate-500 text-xs font-bold uppercase tracking-wider">
-          Uniswap v3 Execution
-        </p>
+    <div className="bg-slate-800 rounded-lg p-6 shadow-lg border border-slate-700">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          🦄 Uniswap Execution
+        </h2>
+        <div className="text-xs font-mono text-slate-400">
+          {isConnected ? 'Wallet Connected' : 'Wallet Disconnected'}
+        </div>
       </div>
 
-      {/* Price Info */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        <div className="bg-slate-950/50 p-4 rounded-2xl border border-slate-800/50">
-          <span className="text-slate-500 text-[10px] font-black uppercase tracking-widest block mb-1">
-            DEX Price
-          </span>
-          <span className="text-white font-mono text-lg font-bold">
-            ${dexPrice.toFixed(6)}
-          </span>
-        </div>
-        <div className="bg-slate-950/50 p-4 rounded-2xl border border-slate-800/50">
-          <span className="text-slate-500 text-[10px] font-black uppercase tracking-widest block mb-1">
-            CEX Price
-          </span>
-          <span className="text-white font-mono text-lg font-bold">
-            ${cexPrice.toFixed(6)}
-          </span>
-        </div>
-        <div
-          className="col-span-2 bg-slate-950/50 p-4 rounded-2xl border border-slate-800/50 flex justify-between items-center"
-          title="Percentage difference between the Uniswap execution price and the centralized exchange reference price."
-        >
-          <span className="text-slate-500 text-[10px] font-black uppercase tracking-widest">
-            Price Deviation ⓘ
-          </span>
-          <span
-            className={`font-mono font-black text-lg ${
-              parseFloat(deviation) > 0 ? "text-emerald-400" : "text-red-400"
-            }`}
+      {/* Token Selection */}
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-slate-400 mb-2">Select Token</label>
+        <div className="flex gap-2">
+          <select
+            value={selectedTokenSymbol}
+            onChange={(e) => setSelectedTokenSymbol(e.target.value)}
+            className="flex-1 bg-slate-900 border border-slate-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
           >
-            {parseFloat(deviation) > 0 ? "+" : ""}
-            {deviation}%
-          </span>
+            {PRESET_TOKENS.map((token) => (
+              <option key={token.symbol} value={token.symbol}>
+                {token.symbol} - {token.name}
+              </option>
+            ))}
+            <option value="CUSTOM">+ Custom Contract</option>
+          </select>
         </div>
+
+        {/* Custom Address Input */}
+        {selectedTokenSymbol === 'CUSTOM' && (
+          <div className="mt-2">
+            <input
+              type="text"
+              placeholder="0x..."
+              value={customTokenAddress}
+              onChange={(e) => setCustomTokenAddress(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-600 text-white text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 font-mono"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Trade Direction */}
+      <div className="flex bg-slate-900 rounded-lg p-1 mb-4">
+        <button
+          onClick={() => setTradeDirection('buy')}
+          className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${tradeDirection === 'buy'
+              ? 'bg-green-600 text-white'
+              : 'text-slate-400 hover:text-white'
+            }`}
+        >
+          Buy {selectedTokenSymbol !== 'CUSTOM' ? selectedTokenSymbol : 'Token'}
+        </button>
+        <button
+          onClick={() => setTradeDirection('sell')}
+          className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${tradeDirection === 'sell'
+              ? 'bg-red-600 text-white'
+              : 'text-slate-400 hover:text-white'
+            }`}
+        >
+          Sell {selectedTokenSymbol !== 'CUSTOM' ? selectedTokenSymbol : 'Token'}
+        </button>
       </div>
 
       {/* Amount Input */}
       <div className="mb-6">
-        <label className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-2 block">
-          Trade Amount ({inputToken})
+        <label className="block text-sm font-medium text-slate-400 mb-2">
+          Amount ({tradeDirection === 'buy' ? 'ETH' : selectedTokenSymbol !== 'CUSTOM' ? selectedTokenSymbol : 'Tokens'})
         </label>
-        <div className="relative">
-          <input
-            type="number"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="w-full bg-slate-950 text-white px-5 py-4 rounded-2xl border border-slate-800 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 focus:outline-none font-mono text-xl font-bold transition-all"
-            placeholder="100"
-          />
-          <div className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-sm">
-            USDT
-          </div>
-        </div>
+        <input
+          type="number"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="0.00"
+          className="w-full bg-slate-900 border border-slate-600 text-white text-xl rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-3"
+        />
       </div>
 
-      {/* Estimated Output */}
-      <div className="bg-emerald-500/5 p-5 rounded-2xl border border-emerald-500/20 mb-8">
-        <div className="flex justify-between items-end">
-          <div>
-            <span className="text-emerald-500/70 text-[10px] font-black uppercase tracking-widest block mb-1">
-              Estimated Output
-            </span>
-            <div className="text-white text-3xl font-black font-mono leading-none">
-              {estimatedOutput}{" "}
-              <span className="text-lg opacity-50">{outputToken}</span>
-            </div>
-          </div>
-          <div className="text-emerald-500/40 text-[10px] font-bold text-right">
-            Slippage: 0.5%
-            <br />
-            Includes LP Fee
-          </div>
+      {/* Status & Action */}
+      {error && (
+        <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded text-red-200 text-sm break-all">
+          Error: {error}
         </div>
-      </div>
+      )}
 
-      {/* Single action: Open in Uniswap */}
-      <a
-        href={uniswapUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="block w-full bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white py-4 rounded-2xl font-black text-center shadow-xl shadow-emerald-900/20 transition-all active:scale-[0.98]"
+      {txHash && (
+        <div className="mb-4 p-3 bg-green-900/50 border border-green-700 rounded text-green-200 text-sm break-all">
+          Tx Submitted: {txHash}
+        </div>
+      )}
+
+      <button
+        onClick={handleSwap}
+        disabled={!isConnected || isLoading || !amount || !activeTokenAddress}
+        className={`w-full py-3 px-4 rounded-lg font-bold text-white transition-colors ${!isConnected
+            ? 'bg-slate-600 cursor-not-allowed'
+            : isLoading
+              ? 'bg-blue-800 cursor-wait'
+              : tradeDirection === 'buy'
+                ? 'bg-green-600 hover:bg-green-700'
+                : 'bg-red-600 hover:bg-red-700'
+          }`}
       >
-        REVIEW ON UNISWAP ↗
-      </a>
-
-      <div className="mt-6 text-center">
-        <p className="text-[10px] text-slate-600 font-bold uppercase tracking-wider">
-          Final execution happens on official Uniswap UI
-        </p>
-      </div>
+        {!isConnected
+          ? 'Connect Wallet First'
+          : isLoading
+            ? 'Swapping...'
+            : `${tradeDirection === 'buy' ? 'Buy' : 'Sell'} ${selectedTokenSymbol !== 'CUSTOM' ? selectedTokenSymbol : 'Token'}`
+        }
+      </button>
     </div>
   );
-}
+};
