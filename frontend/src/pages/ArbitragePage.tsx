@@ -1425,13 +1425,18 @@ export function ArbitragePage() {
                         <button
                           onClick={() => handleExecute(opp)}
                           disabled={state.kill_switch}
-                          className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                          className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${
                             state.kill_switch
                               ? "bg-slate-700 text-slate-500 cursor-not-allowed"
+                              : opp.edge_bps >= 50
+                              ? "bg-emerald-600 text-white hover:bg-emerald-500 animate-pulse"
                               : "bg-blue-600 text-white hover:bg-blue-500"
                           }`}
                         >
-                          {state.mode === "PAPER" ? "Simulate" : "Execute"}
+                          ⚡{" "}
+                          {state.mode === "PAPER"
+                            ? "Paper Trade"
+                            : "Execute Arb"}
                         </button>
                       ) : (
                         <span className="text-slate-500 text-xs">

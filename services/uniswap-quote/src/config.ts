@@ -136,7 +136,7 @@ export const TOKENS = {
   USDT: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
 };
 
-// V4 Pool Parameters
+// V4 Pool Parameters with verified Pool IDs
 export const POOL_PARAMS = {
   CSR_USDT: {
     currency0: TOKENS.CSR,
@@ -144,6 +144,8 @@ export const POOL_PARAMS = {
     fee: 3000, // 0.3%
     tickSpacing: 60,
     hooks: "0x0000000000000000000000000000000000000000",
+    poolId:
+      "0x6c76bb9f364e72fcb57819d2920550768cf43e09e819daa40fabe9c7ab057f9e",
   },
   CSR25_USDT: {
     currency0: TOKENS.CSR25,
@@ -151,6 +153,8 @@ export const POOL_PARAMS = {
     fee: 3000, // 0.3%
     tickSpacing: 60,
     hooks: "0x0000000000000000000000000000000000000000",
+    poolId:
+      "0x46afcc847653fa391320b2bde548c59cf384b029933667c541fb730c5641778e",
   },
 };
 

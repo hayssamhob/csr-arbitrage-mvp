@@ -1754,14 +1754,18 @@ router.get("/health/etherscan", async (_req, res) => {
     return res.json({ status: "error", reason: "missing_api_key" });
   }
   try {
+    // Use Etherscan V2 API with chainid=1 for Ethereum mainnet
     const response = await axios.get(
-      `https://api.etherscan.io/api?module=stats&action=ethprice&apikey=${apiKey}`,
+      `https://api.etherscan.io/v2/api?chainid=1&module=stats&action=ethprice&apikey=${apiKey}`,
       { timeout: 5000 }
     );
     if (response.data.status === "1") {
       res.json({ status: "connected", last_check: new Date().toISOString() });
     } else {
-      res.json({ status: "error", reason: response.data.message || "bad_response" });
+      res.json({
+        status: "error",
+        reason: response.data.message || "bad_response",
+      });
     }
   } catch (error: any) {
     res.json({ status: "error", reason: error.code === "ECONNABORTED" ? "timeout" : "connection_failed" });
