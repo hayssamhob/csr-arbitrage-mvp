@@ -9,18 +9,23 @@ dotenv.config();
  * Fails fast if critical production keys are missing.
  */
 const ConfigSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  NODE_ENV: z
+    .enum(["development", "production", "test"])
+    .default("development"),
   HTTP_PORT: z.coerce.number().default(3002),
 
   // Blockchain Access
-  RPC_URL: z.string().url().default('https://mainnet.infura.io/v3/4030c256a99c4a3d91b7c1075e5bffcb'),
+  RPC_URL: z
+    .string()
+    .url()
+    .default("https://mainnet.infura.io/v3/4030c256a99c4a3d91b7c1075e5bffcb"),
   CHAIN_ID: z.coerce.number().default(1),
 
   // Execution Wallet (Multi-tenant: fetched per-user, but this is fallback)
   PRIVATE_KEY: z.string().optional(),
 
   // Flashbots & Privacy
-  FLASHBOTS_RELAY_URL: z.string().url().default('https://relay.flashbots.net'),
+  FLASHBOTS_RELAY_URL: z.string().url().default("https://relay.flashbots.net"),
   ENABLE_STEALTH_MODE: z.coerce.boolean().default(true),
 
   // Safety Limits
@@ -28,7 +33,7 @@ const ConfigSchema = z.object({
   MAX_SLIPPAGE_PERCENT: z.coerce.number().default(2.0),
 
   // Redis for Kill Switch check
-  REDIS_URL: z.string().default('redis://localhost:6379'),
+  REDIS_URL: z.string().default("redis://localhost:6379"),
 
   // Supabase for Multi-Tenant keys
   SUPABASE_URL: z.string().optional(),
@@ -36,10 +41,16 @@ const ConfigSchema = z.object({
   CEX_SECRETS_KEY: z.string().optional(),
 
   // Pool IDs
-  CSR_POOL_ID: z.string().default(''),
-  CSR25_POOL_ID: z.string().default(''),
+  CSR_POOL_ID: z.string().default(""),
+  CSR25_POOL_ID: z.string().default(""),
+  CSR_POOL_FEE_BPS: z.coerce.number().optional(),
+  CSR25_POOL_FEE_BPS: z.coerce.number().optional(),
+  CSR_POOL_TICK_SPACING: z.coerce.number().optional(),
+  CSR25_POOL_TICK_SPACING: z.coerce.number().optional(),
+  CSR_POOL_HOOK: z.string().optional(),
+  CSR25_POOL_HOOK: z.string().optional(),
   POLL_INTERVAL_MS: z.coerce.number().default(5000),
-  LOG_LEVEL: z.string().default('info'),
+  LOG_LEVEL: z.string().default("info"),
 });
 
 // Parse and Validate
@@ -60,6 +71,12 @@ export interface Config {
   HTTP_PORT: number;
   CSR_POOL_ID: string;
   CSR25_POOL_ID: string;
+  CSR_POOL_FEE_BPS?: number;
+  CSR25_POOL_FEE_BPS?: number;
+  CSR_POOL_TICK_SPACING?: number;
+  CSR25_POOL_TICK_SPACING?: number;
+  CSR_POOL_HOOK?: string;
+  CSR25_POOL_HOOK?: string;
   POLL_INTERVAL_MS: number;
   LOG_LEVEL: string;
   PRIVATE_KEY: string;
@@ -75,6 +92,13 @@ export function loadConfig(): Config {
     HTTP_PORT: config.HTTP_PORT,
     CSR_POOL_ID: config.CSR_POOL_ID,
     CSR25_POOL_ID: config.CSR25_POOL_ID,
+    // Optional V4 parameters (fall back to undefined)
+    CSR_POOL_FEE_BPS: config.CSR_POOL_FEE_BPS,
+    CSR25_POOL_FEE_BPS: config.CSR25_POOL_FEE_BPS,
+    CSR_POOL_TICK_SPACING: config.CSR_POOL_TICK_SPACING,
+    CSR25_POOL_TICK_SPACING: config.CSR25_POOL_TICK_SPACING,
+    CSR_POOL_HOOK: config.CSR_POOL_HOOK,
+    CSR25_POOL_HOOK: config.CSR25_POOL_HOOK,
     POLL_INTERVAL_MS: config.POLL_INTERVAL_MS,
     LOG_LEVEL: config.LOG_LEVEL,
     PRIVATE_KEY: config.PRIVATE_KEY || "",
