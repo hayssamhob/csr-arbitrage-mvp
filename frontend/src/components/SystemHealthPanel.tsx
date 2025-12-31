@@ -55,9 +55,13 @@ function getStatusBorderColor(status: string): string {
   }
 }
 
-function formatAge(timestamp: string | null): string {
+function formatAge(timestamp: string | number | null): string {
   if (!timestamp) return "Never";
-  const age = Date.now() - new Date(timestamp).getTime();
+  const now = Date.now();
+  const then = typeof timestamp === "number" ? timestamp : new Date(timestamp).getTime();
+  const age = now - then;
+
+  if (age < 0) return "Just now"; // Handle clock drift
   if (age < 1000) return "Just now";
   if (age < 60000) return `${Math.floor(age / 1000)}s ago`;
   if (age < 3600000) return `${Math.floor(age / 60000)}m ago`;
@@ -76,13 +80,12 @@ function ServiceCard({ service }: { service: ServiceHealth }) {
           <span className="font-medium text-sm">{service.name}</span>
         </div>
         <span
-          className={`text-xs px-2 py-0.5 rounded ${
-            service.status === "ok"
+          className={`text-xs px-2 py-0.5 rounded ${service.status === "ok"
               ? "bg-emerald-500/20 text-emerald-400"
               : service.status === "degraded"
-              ? "bg-yellow-500/20 text-yellow-400"
-              : "bg-red-500/20 text-red-400"
-          }`}
+                ? "bg-yellow-500/20 text-yellow-400"
+                : "bg-red-500/20 text-red-400"
+            }`}
         >
           {service.status.toUpperCase()}
         </span>
@@ -181,9 +184,8 @@ export function SystemHealthPanel() {
             Updated {formatAge(status.ts)}
           </span>
           <svg
-            className={`w-4 h-4 text-slate-400 transition-transform ${
-              expanded ? "rotate-180" : ""
-            }`}
+            className={`w-4 h-4 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""
+              }`}
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"

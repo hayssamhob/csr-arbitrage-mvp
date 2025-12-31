@@ -120,20 +120,8 @@ function timeAgo(ts: string): string {
   return `${Math.floor(diffMs / 3600000)}h ago`;
 }
 
-interface ScraperQuote {
-  market: string;
-  amountInUSDT: number;
-  amountOutToken: number;
-  price_usdt_per_token: number;
-  price_token_per_usdt: number;
-  gasEstimateUsdt: number | null;
-  valid: boolean;
-  reason?: string;
-  ts: number;
-}
-
 interface ScraperData {
-  quotes: ScraperQuote[];
+  quotes: any[];
   meta: {
     lastSuccessTs: number | null;
     errorsLast5m: number;
@@ -149,11 +137,11 @@ interface BackendAlignment {
   deviation_pct: number | null;
   band_bps: number;
   status:
-    | "ALIGNED"
-    | "BUY_ON_DEX"
-    | "SELL_ON_DEX"
-    | "NO_ACTION"
-    | "NOT_SUPPORTED_YET";
+  | "ALIGNED"
+  | "BUY_ON_DEX"
+  | "SELL_ON_DEX"
+  | "NO_ACTION"
+  | "NOT_SUPPORTED_YET";
   direction: "BUY" | "SELL" | "NONE";
   required_usdt: number | null;
   required_tokens: number | null;
@@ -190,36 +178,9 @@ function App() {
     cexPrice: number;
   } | null>(null);
 
-  // Convert scraper quotes to DexQuote format
-  const csrDexQuotes: DexQuote[] = useMemo(() => {
-    if (!scraperData?.quotes) return [];
-    return scraperData.quotes
-      .filter((q) => q.market === "CSR_USDT" && q.valid)
-      .map((q) => ({
-        amountInUSDT: q.amountInUSDT,
-        tokensOut: q.amountOutToken,
-        executionPrice: q.price_usdt_per_token,
-        gasEstimateUsdt: q.gasEstimateUsdt ?? null,
-        slippagePercent: 0.5,
-        valid: q.valid,
-        source: "ui_scrape",
-      }));
-  }, [scraperData]);
-
-  const csr25DexQuotes: DexQuote[] = useMemo(() => {
-    if (!scraperData?.quotes) return [];
-    return scraperData.quotes
-      .filter((q) => q.market === "CSR25_USDT" && q.valid)
-      .map((q) => ({
-        amountInUSDT: q.amountInUSDT,
-        tokensOut: q.amountOutToken,
-        executionPrice: q.price_usdt_per_token,
-        gasEstimateUsdt: q.gasEstimateUsdt ?? null,
-        slippagePercent: 0.5,
-        valid: q.valid,
-        source: "ui_scrape",
-      }));
-  }, [scraperData]);
+  // No longer using UI-side scraper
+  const csrDexQuotes: DexQuote[] = [];
+  const csr25DexQuotes: DexQuote[] = [];
 
   // Compute service status with freshness, age, and explicit reasons
   const services: ServiceStatus[] = useMemo(() => {
@@ -244,12 +205,12 @@ function App() {
     const lbankReason = !lbankStatus
       ? "no data"
       : !isHealthy(lbankStatus)
-      ? data?.system_status?.lbank_gateway?.subscription_errors?.[
-          "csr25_usdt"
+        ? data?.system_status?.lbank_gateway?.subscription_errors?.[
+        "csr25_usdt"
         ] || "reconnecting..."
-      : lbankStale
-      ? `stale (${lbankAge}s > ${FRESHNESS.CEX_STALE_SEC}s)`
-      : undefined;
+        : lbankStale
+          ? `stale (${lbankAge}s > ${FRESHNESS.CEX_STALE_SEC}s)`
+          : undefined;
 
     // LATOKEN (CEX for CSR) - 30s freshness threshold
     const latokenTs = data?.system_status?.latoken_gateway?.ts;
@@ -259,26 +220,22 @@ function App() {
     const latokenReason = !latokenStatus
       ? "no data"
       : !isHealthy(latokenStatus)
-      ? "reconnecting..."
-      : latokenStale
-      ? `stale (${latokenAge}s > ${FRESHNESS.CEX_STALE_SEC}s)`
-      : undefined;
+        ? "reconnecting..."
+        : latokenStale
+          ? `stale (${latokenAge}s > ${FRESHNESS.CEX_STALE_SEC}s)`
+          : undefined;
 
-    // Uniswap scraper (DEX) - 60s freshness threshold
-    const uniswapTs = scraperData?.meta?.lastSuccessTs;
+    // Unified V4 Gateway
+    const uniswapHealth = data?.system_status?.uniswap_v4_gateway;
+    const uniswapTs = uniswapHealth?.ts;
     const uniswapAge = getAge(uniswapTs);
-    const uniswapStale = uniswapAge > FRESHNESS.DEX_STALE_SEC;
-    const csrQuotes =
-      scraperData?.quotes?.filter((q) => q.market === "CSR_USDT" && q.valid)
-        .length || 0;
-    const csr25Quotes =
-      scraperData?.quotes?.filter((q) => q.market === "CSR25_USDT" && q.valid)
-        .length || 0;
+    const uniswapStatus = uniswapHealth?.status;
 
     // Strategy engine
-    const strategyTs = data?.system_status?.strategy_engine?.ts;
+    const strategyHealth = data?.system_status?.strategy_engine;
+    const strategyTs = strategyHealth?.ts;
     const strategyAge = getAge(strategyTs);
-    const strategyStatus = data?.system_status?.strategy_engine?.status;
+    const strategyStatus = strategyHealth?.status;
 
     return [
       {
@@ -286,10 +243,8 @@ function App() {
         status: (!lbankStatus
           ? "offline"
           : isHealthy(lbankStatus) && !lbankStale
-          ? "ok"
-          : lbankStale
-          ? "warning"
-          : "warning") as ServiceStatus["status"],
+            ? "ok"
+            : "warning") as ServiceStatus["status"],
         lastUpdate: lbankTs || "—",
         ageSeconds: lbankAge < 999 ? lbankAge : undefined,
         isStale: lbankStale,
@@ -300,48 +255,22 @@ function App() {
         status: (!latokenStatus
           ? "offline"
           : isHealthy(latokenStatus) && !latokenStale
-          ? "ok"
-          : latokenStale
-          ? "warning"
-          : "warning") as ServiceStatus["status"],
+            ? "ok"
+            : "warning") as ServiceStatus["status"],
         lastUpdate: latokenTs || "—",
         ageSeconds: latokenAge < 999 ? latokenAge : undefined,
         isStale: latokenStale,
         reason: latokenReason,
       },
       {
-        name: "DEX CSR",
-        status: (csrQuotes > 0 && !uniswapStale
+        name: "Uniswap V4",
+        status: (isHealthy(uniswapStatus) && uniswapAge < 60
           ? "ok"
-          : csrQuotes === 0
-          ? "error"
           : "warning") as ServiceStatus["status"],
-        lastUpdate: uniswapTs ? new Date(uniswapTs).toISOString() : "—",
+        lastUpdate: uniswapTs || "—",
         ageSeconds: uniswapAge < 999 ? uniswapAge : undefined,
-        isStale: uniswapStale || csrQuotes === 0,
-        reason:
-          csrQuotes === 0
-            ? "no CSR quotes (scraper issue)"
-            : uniswapStale
-            ? `stale`
-            : undefined,
-      },
-      {
-        name: "DEX CSR25",
-        status: (csr25Quotes > 0 && !uniswapStale
-          ? "ok"
-          : csr25Quotes === 0
-          ? "error"
-          : "warning") as ServiceStatus["status"],
-        lastUpdate: uniswapTs ? new Date(uniswapTs).toISOString() : "—",
-        ageSeconds: uniswapAge < 999 ? uniswapAge : undefined,
-        isStale: uniswapStale || csr25Quotes === 0,
-        reason:
-          csr25Quotes === 0
-            ? "no CSR25 quotes"
-            : uniswapStale
-            ? `stale`
-            : undefined,
+        isStale: uniswapAge > 60,
+        reason: !uniswapStatus ? "no data" : uniswapAge > 60 ? "stale" : undefined,
       },
       {
         name: "Strategy",
@@ -350,7 +279,7 @@ function App() {
           : "warning") as ServiceStatus["status"],
         lastUpdate: strategyTs || "—",
         ageSeconds: strategyAge < 999 ? strategyAge : undefined,
-        isStale: false,
+        isStale: strategyAge > 60,
         reason: strategyStatus !== "ok" ? "not running" : undefined,
       },
     ];
@@ -401,370 +330,349 @@ function App() {
     });
   };
 
-  // Fetch scraper quotes
-  useEffect(() => {
-    async function fetchScraperQuotes() {
-      try {
-        const resp = await fetch(`${API_URL}/api/scraper/quotes`);
-        if (resp.ok) {
-          const scraperJson = await resp.json();
-          setScraperData(scraperJson);
-        }
-      } catch (e) {
-        console.error("Failed to fetch scraper quotes:", e);
-        // Try fallback endpoint when scraper fails
-        try {
-          const fallbackResp = await fetch(
-            `${API_URL}/api/dex-quotes/fallback`
-          );
-          if (fallbackResp.ok) {
-            const fallbackJson = await fallbackResp.json();
-            // Transform fallback data to scraper format
-            const transformed = {
-              quotes: fallbackJson.quotes.map((q: any) => ({
-                market: q.market,
-                inputToken: "USDT",
-                outputToken: q.market.includes("CSR25") ? "CSR25" : "CSR",
-                amountInUSDT: 100,
-                amountInRaw: "100",
-                amountOutToken: q.dex_price * 100,
-                amountOutRaw: (q.dex_price * 100).toString(),
-                price_usdt_per_token: q.dex_price,
-                price_token_per_usdt: 1 / q.dex_price,
-                usdt_for_1_token: 1 / q.dex_price,
-                gasEstimateUsdt: null,
-                gasRaw: null,
-                route: "database_fallback",
-                ts: Date.now(),
-                scrapeMs: 0,
-                valid: true,
-                reason: null,
-              })),
-              meta: {
-                scrapeMs: 0,
-                browser: "database_fallback",
-                errorsLast5m: 0,
-                lastSuccessTs: Date.now(),
-                consecutiveFailures: 0,
-              },
-            };
-            setScraperData(transformed);
-            console.log("Using database fallback for DEX quotes");
-          }
+  const transformed = {
+    quotes: fallbackJson.quotes.map((q: any) => ({
+      market: q.market,
+      inputToken: "USDT",
+      outputToken: q.market.includes("CSR25") ? "CSR25" : "CSR",
+      amountInUSDT: 100,
+      amountInRaw: "100",
+      amountOutToken: q.dex_price * 100,
+      amountOutRaw: (q.dex_price * 100).toString(),
+      price_usdt_per_token: q.dex_price,
+      price_token_per_usdt: 1 / q.dex_price,
+      usdt_for_1_token: 1 / q.dex_price,
+      gasEstimateUsdt: null,
+      gasRaw: null,
+      route: "database_fallback",
+      ts: Date.now(),
+      scrapeMs: 0,
+      valid: true,
+      reason: null,
+    })),
+    meta: {
+      scrapeMs: 0,
+      browser: "database_fallback",
+      errorsLast5m: 0,
+      lastSuccessTs: Date.now(),
+      consecutiveFailures: 0,
+    },
+  };
+  setScraperData(transformed);
+  console.log("Using database fallback for DEX quotes");
+}
         } catch (fallbackError) {
-          console.error("Fallback quotes also failed:", fallbackError);
-        }
+  console.error("Fallback quotes also failed:", fallbackError);
+}
       }
     }
-    fetchScraperQuotes();
-    const interval = setInterval(fetchScraperQuotes, 5000);
-    return () => clearInterval(interval);
+fetchScraperQuotes();
+const interval = setInterval(fetchScraperQuotes, 5000);
+return () => clearInterval(interval);
   }, []);
 
-  // Fetch alignment data from backend - AUTHORITATIVE source for required trade sizes
-  useEffect(() => {
-    async function fetchAlignment() {
+// Fetch alignment data from backend - AUTHORITATIVE source for required trade sizes
+useEffect(() => {
+  async function fetchAlignment() {
+    try {
+      const resp = await fetch(`${API_URL}/api/alignment`);
+      if (resp.ok) {
+        const alignmentJson = await resp.json();
+        setAlignmentData(alignmentJson);
+      }
+    } catch (e) {
+      console.error("Failed to fetch alignment:", e);
+    }
+  }
+  fetchAlignment();
+  const interval = setInterval(fetchAlignment, 3000);
+  return () => clearInterval(interval);
+}, []);
+
+// Fetch initial data
+useEffect(() => {
+  async function fetchInitialData() {
+    try {
+      const resp = await fetch(`${API_URL}/api/dashboard`);
+      if (resp.ok) {
+        const initialData = await resp.json();
+        setData(initialData);
+        setLastUpdate(new Date());
+      }
+    } catch {
+      console.error("Failed to fetch initial data");
+    }
+  }
+  fetchInitialData();
+}, []);
+
+// WebSocket connection
+useEffect(() => {
+  let ws: WebSocket | null = null;
+  function connect() {
+    ws = new WebSocket(getWsUrl());
+    ws.onopen = () => setError(null);
+    ws.onmessage = (event) => {
       try {
-        const resp = await fetch(`${API_URL}/api/alignment`);
-        if (resp.ok) {
-          const alignmentJson = await resp.json();
-          setAlignmentData(alignmentJson);
-        }
-      } catch (e) {
-        console.error("Failed to fetch alignment:", e);
+        const parsed = JSON.parse(event.data);
+        setData(parsed);
+        setLastUpdate(new Date());
+      } catch {
+        console.error("Failed to parse WS message");
       }
-    }
-    fetchAlignment();
-    const interval = setInterval(fetchAlignment, 3000);
-    return () => clearInterval(interval);
-  }, []);
+    };
+    ws.onerror = () => setError("WebSocket error");
+    ws.onclose = () => {
+      setError("Connection lost");
+      setTimeout(connect, 3000);
+    };
+  }
+  connect();
+  return () => {
+    ws?.close();
+  };
+}, []);
 
-  // Fetch initial data
-  useEffect(() => {
-    async function fetchInitialData() {
+// Polling fallback
+useEffect(() => {
+  if (error) {
+    const interval = setInterval(async () => {
       try {
         const resp = await fetch(`${API_URL}/api/dashboard`);
         if (resp.ok) {
-          const initialData = await resp.json();
-          setData(initialData);
+          const newData = await resp.json();
+          setData(newData);
           setLastUpdate(new Date());
+          setError(null);
         }
       } catch {
-        console.error("Failed to fetch initial data");
+        console.error("Polling failed");
       }
-    }
-    fetchInitialData();
-  }, []);
+    }, 2000);
+    return () => clearInterval(interval);
+  }
+}, [error]);
 
-  // WebSocket connection
-  useEffect(() => {
-    let ws: WebSocket | null = null;
-    function connect() {
-      ws = new WebSocket(getWsUrl());
-      ws.onopen = () => setError(null);
-      ws.onmessage = (event) => {
-        try {
-          const parsed = JSON.parse(event.data);
-          setData(parsed);
-          setLastUpdate(new Date());
-        } catch {
-          console.error("Failed to parse WS message");
-        }
-      };
-      ws.onerror = () => setError("WebSocket error");
-      ws.onclose = () => {
-        setError("Connection lost");
-        setTimeout(connect, 3000);
-      };
-    }
-    connect();
-    return () => {
-      ws?.close();
-    };
-  }, []);
+// Local mode state
+const [pageMode, setPageMode] = useState<"PAPER" | "MANUAL" | "AUTO">(
+  "MANUAL"
+);
+const [killSwitch, setKillSwitch] = useState(false);
 
-  // Polling fallback
-  useEffect(() => {
-    if (error) {
-      const interval = setInterval(async () => {
-        try {
-          const resp = await fetch(`${API_URL}/api/dashboard`);
-          if (resp.ok) {
-            const newData = await resp.json();
-            setData(newData);
-            setLastUpdate(new Date());
-            setError(null);
-          }
-        } catch {
-          console.error("Polling failed");
-        }
-      }, 2000);
-      return () => clearInterval(interval);
-    }
-  }, [error]);
+const handleModeChange = (newMode: "PAPER" | "MANUAL" | "AUTO") => {
+  if (newMode === "AUTO" && killSwitch) {
+    alert("Cannot enable AUTO mode while kill switch is active");
+    return;
+  }
+  setPageMode(newMode);
+};
 
-  // Local mode state
-  const [pageMode, setPageMode] = useState<"PAPER" | "MANUAL" | "AUTO">(
-    "MANUAL"
-  );
-  const [killSwitch, setKillSwitch] = useState(false);
+// Map page mode to alignment execution mode
+const alignmentExecutionMode: "OFF" | "MANUAL" | "AUTO" =
+  pageMode === "PAPER" ? "OFF" : pageMode;
 
-  const handleModeChange = (newMode: "PAPER" | "MANUAL" | "AUTO") => {
-    if (newMode === "AUTO" && killSwitch) {
-      alert("Cannot enable AUTO mode while kill switch is active");
-      return;
-    }
-    setPageMode(newMode);
-  };
+return (
+  <div className="min-h-screen bg-[#020617] text-slate-200 selection:bg-emerald-500/30">
+    {/* Background Decorative Elements */}
+    <div className="fixed inset-0 overflow-hidden pointer-events-none">
+      <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-emerald-900/10 blur-[120px] rounded-full animate-pulse"></div>
+      <div className="absolute top-[20%] -right-[10%] w-[30%] h-[30%] bg-blue-900/10 blur-[100px] rounded-full"></div>
+      <div className="absolute -bottom-[10%] left-[20%] w-[35%] h-[35%] bg-cyan-900/10 blur-[110px] rounded-full"></div>
+    </div>
 
-  // Map page mode to alignment execution mode
-  const alignmentExecutionMode: "OFF" | "MANUAL" | "AUTO" =
-    pageMode === "PAPER" ? "OFF" : pageMode;
-
-  return (
-    <div className="min-h-screen bg-[#020617] text-slate-200 selection:bg-emerald-500/30">
-      {/* Background Decorative Elements */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-emerald-900/10 blur-[120px] rounded-full animate-pulse"></div>
-        <div className="absolute top-[20%] -right-[10%] w-[30%] h-[30%] bg-blue-900/10 blur-[100px] rounded-full"></div>
-        <div className="absolute -bottom-[10%] left-[20%] w-[35%] h-[35%] bg-cyan-900/10 blur-[110px] rounded-full"></div>
-      </div>
-
-      <div className="relative max-w-7xl mx-auto px-4 py-8 space-y-8">
-        {/* Header Section */}
-        <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]"></span>
-              <h2 className="text-sm font-black uppercase tracking-[0.3em] text-emerald-500/80">
-                Live Monitoring
-              </h2>
-            </div>
-            <h1 className="text-4xl font-black text-white tracking-tight">
-              Market <span className="text-slate-500">Alignment</span>
-            </h1>
+    <div className="relative max-w-7xl mx-auto px-4 py-8 space-y-8">
+      {/* Header Section */}
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]"></span>
+            <h2 className="text-sm font-black uppercase tracking-[0.3em] text-emerald-500/80">
+              Live Monitoring
+            </h2>
           </div>
+          <h1 className="text-4xl font-black text-white tracking-tight">
+            Market <span className="text-slate-500">Alignment</span>
+          </h1>
+        </div>
 
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1 bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-1 shadow-inner">
-              {(["PAPER", "MANUAL", "AUTO"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => handleModeChange(m)}
-                  disabled={m === "AUTO"}
-                  className={`px-4 py-2 text-xs font-bold rounded-lg transition-all duration-300 ${
-                    pageMode === m
-                      ? m === "PAPER"
-                        ? "bg-amber-500 text-white shadow-lg shadow-amber-900/20"
-                        : m === "MANUAL"
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1 bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-1 shadow-inner">
+            {(["PAPER", "MANUAL", "AUTO"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => handleModeChange(m)}
+                disabled={m === "AUTO"}
+                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all duration-300 ${pageMode === m
+                    ? m === "PAPER"
+                      ? "bg-amber-500 text-white shadow-lg shadow-amber-900/20"
+                      : m === "MANUAL"
                         ? "bg-blue-600 text-white shadow-lg shadow-blue-900/20"
                         : "bg-emerald-600 text-white shadow-lg shadow-emerald-900/20"
-                      : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
+                    : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
                   } ${m === "AUTO" ? "opacity-30 cursor-not-allowed" : ""}`}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
+              >
+                {m}
+              </button>
+            ))}
+          </div>
 
-            <button
-              onClick={() => setKillSwitch(!killSwitch)}
-              className={`px-5 py-2 text-xs font-black rounded-xl border transition-all duration-300 ${
-                killSwitch
-                  ? "bg-red-500/10 border-red-500/50 text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)] animate-pulse"
-                  : "bg-slate-900/50 border-slate-700 text-slate-400 hover:border-emerald-500/50 hover:text-emerald-500"
+          <button
+            onClick={() => setKillSwitch(!killSwitch)}
+            className={`px-5 py-2 text-xs font-black rounded-xl border transition-all duration-300 ${killSwitch
+                ? "bg-red-500/10 border-red-500/50 text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)] animate-pulse"
+                : "bg-slate-900/50 border-slate-700 text-slate-400 hover:border-emerald-500/50 hover:text-emerald-500"
               }`}
-            >
-              {killSwitch ? "🛑 EMERGENCY STOP" : "🟢 SYSTEM ACTIVE"}
-            </button>
-          </div>
-        </header>
-
-        {/* Global Status Bar - service health indicators */}
-        <div className="bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-800/50 p-4 shadow-xl">
-          <GlobalStatusBar services={services} lastDataUpdate={lastUpdate} />
+          >
+            {killSwitch ? "🛑 EMERGENCY STOP" : "🟢 SYSTEM ACTIVE"}
+          </button>
         </div>
+      </header>
 
-        {/* Dual Token Display - CSR25 and CSR side by side */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          {/* CSR25 Column */}
-          <div className="space-y-6">
-            <div className="bg-slate-900/40 backdrop-blur-xl rounded-3xl border border-slate-800/50 p-1 shadow-2xl overflow-hidden">
-              <AlignmentDisplay
-                token="CSR25"
-                alignment={alignmentData?.csr25_usdt ?? null}
-                onExecute={handleAlignmentExecute}
-                executionMode={alignmentExecutionMode}
-              />
-            </div>
-            <div className="bg-slate-900/40 backdrop-blur-xl rounded-3xl border border-slate-800/50 p-6 shadow-xl hover:border-slate-700/50 transition-colors">
-              <MarketContextCard
-                token="CSR25"
-                cexData={
-                  data?.market_state?.csr25_usdt?.lbank_ticker
-                    ? {
-                        bid: data.market_state.csr25_usdt.lbank_ticker.bid,
-                        ask: data.market_state.csr25_usdt.lbank_ticker.ask,
-                        last: data.market_state.csr25_usdt.lbank_ticker.last,
-                        volume24h:
-                          data.market_state.csr25_usdt.lbank_ticker.volume_24h,
-                        source: "LBANK",
-                        timestamp: timeAgo(
-                          data.market_state.csr25_usdt.lbank_ticker.ts
-                        ),
-                      }
-                    : null
-                }
-                dexData={
-                  data?.market_state?.csr25_usdt?.uniswap_quote
-                    ? {
-                        executionPrice:
-                          data.market_state.csr25_usdt.uniswap_quote
-                            .effective_price_usdt,
-                        gasEstimateUsdt: 0.01,
-                        quoteSize: 100,
-                        source: "Uniswap",
-                        timestamp: timeAgo(
-                          data.market_state.csr25_usdt.uniswap_quote.ts
-                        ),
-                      }
-                    : null
-                }
-              />
-            </div>
-            <div className="bg-slate-900/40 backdrop-blur-xl rounded-3xl border border-slate-800/50 p-6 shadow-xl overflow-hidden hover:border-slate-700/50 transition-colors">
-              <QuoteLadder token="CSR25" />
-            </div>
-          </div>
-
-          {/* CSR Column */}
-          <div className="space-y-6">
-            <div className="bg-slate-900/40 backdrop-blur-xl rounded-3xl border border-slate-800/50 p-1 shadow-2xl overflow-hidden">
-              <AlignmentDisplay
-                token="CSR"
-                alignment={alignmentData?.csr_usdt ?? null}
-                onExecute={handleAlignmentExecute}
-                executionMode={alignmentExecutionMode}
-              />
-            </div>
-            <div className="bg-slate-900/40 backdrop-blur-xl rounded-3xl border border-slate-800/50 p-6 shadow-xl hover:border-slate-700/50 transition-colors">
-              <MarketContextCard
-                token="CSR"
-                cexData={
-                  data?.market_state?.csr_usdt?.latoken_ticker
-                    ? {
-                        bid: data.market_state.csr_usdt.latoken_ticker.bid,
-                        ask: data.market_state.csr_usdt.latoken_ticker.ask,
-                        last: data.market_state.csr_usdt.latoken_ticker.last,
-                        volume24h:
-                          data.market_state.csr_usdt.latoken_ticker
-                            .volume_24h || 0,
-                        source: "LATOKEN",
-                        timestamp: timeAgo(
-                          data.market_state.csr_usdt.latoken_ticker.ts
-                        ),
-                      }
-                    : null
-                }
-                dexData={
-                  data?.market_state?.csr_usdt?.uniswap_quote
-                    ? {
-                        executionPrice:
-                          data.market_state.csr_usdt.uniswap_quote
-                            .effective_price_usdt,
-                        gasEstimateUsdt: 0.01,
-                        quoteSize: 100,
-                        source: "Uniswap",
-                        timestamp: timeAgo(
-                          data.market_state.csr_usdt.uniswap_quote.ts
-                        ),
-                      }
-                    : null
-                }
-              />
-            </div>
-            <div className="bg-slate-900/40 backdrop-blur-xl rounded-3xl border border-slate-800/50 p-6 shadow-xl overflow-hidden hover:border-slate-700/50 transition-colors">
-              <QuoteLadder token="CSR" />
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <footer className="text-center text-slate-600 text-xs py-12 border-t border-slate-900">
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <img
-              src="/depollute-logo-256.png"
-              alt="CSR"
-              className="h-6 w-6 grayscale opacity-20"
-            />
-            <span className="font-black tracking-widest uppercase opacity-30">
-              Security Protocol Protected
-            </span>
-          </div>
-          <p>© 2025 Depollute Now • All systems operational</p>
-        </footer>
+      {/* Global Status Bar - service health indicators */}
+      <div className="bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-800/50 p-4 shadow-xl">
+        <GlobalStatusBar services={services} lastDataUpdate={lastUpdate} />
       </div>
 
-      {/* Modals */}
-      {showTradePanel && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-slate-950/90 backdrop-blur-md"
-            onClick={() => setShowTradePanel(null)}
-          ></div>
-          <div className="relative w-full max-w-lg animate-in zoom-in-95 duration-200">
-            <UniswapTradePanel
-              token={showTradePanel.token}
-              dexPrice={showTradePanel.dexPrice}
-              cexPrice={showTradePanel.cexPrice}
-              direction={showTradePanel.direction}
-              onClose={() => setShowTradePanel(null)}
+      {/* Dual Token Display - CSR25 and CSR side by side */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        {/* CSR25 Column */}
+        <div className="space-y-6">
+          <div className="bg-slate-900/40 backdrop-blur-xl rounded-3xl border border-slate-800/50 p-1 shadow-2xl overflow-hidden">
+            <AlignmentDisplay
+              token="CSR25"
+              alignment={alignmentData?.csr25_usdt ?? null}
+              onExecute={handleAlignmentExecute}
+              executionMode={alignmentExecutionMode}
             />
           </div>
+          <div className="bg-slate-900/40 backdrop-blur-xl rounded-3xl border border-slate-800/50 p-6 shadow-xl hover:border-slate-700/50 transition-colors">
+            <MarketContextCard
+              token="CSR25"
+              cexData={
+                data?.market_state?.csr25_usdt?.lbank_ticker
+                  ? {
+                    bid: data.market_state.csr25_usdt.lbank_ticker.bid,
+                    ask: data.market_state.csr25_usdt.lbank_ticker.ask,
+                    last: data.market_state.csr25_usdt.lbank_ticker.last,
+                    volume24h:
+                      data.market_state.csr25_usdt.lbank_ticker.volume_24h,
+                    source: "LBANK",
+                    timestamp: timeAgo(
+                      data.market_state.csr25_usdt.lbank_ticker.ts
+                    ),
+                  }
+                  : null
+              }
+              dexData={
+                data?.market_state?.csr25_usdt?.uniswap_quote
+                  ? {
+                    executionPrice:
+                      data.market_state.csr25_usdt.uniswap_quote
+                        .effective_price_usdt,
+                    gasEstimateUsdt: 0.01,
+                    quoteSize: 100,
+                    source: "Uniswap",
+                    timestamp: timeAgo(
+                      data.market_state.csr25_usdt.uniswap_quote.ts
+                    ),
+                  }
+                  : null
+              }
+            />
+          </div>
+          <div className="bg-slate-900/40 backdrop-blur-xl rounded-3xl border border-slate-800/50 p-6 shadow-xl overflow-hidden hover:border-slate-700/50 transition-colors">
+            <QuoteLadder token="CSR25" />
+          </div>
         </div>
-      )}
+
+        {/* CSR Column */}
+        <div className="space-y-6">
+          <div className="bg-slate-900/40 backdrop-blur-xl rounded-3xl border border-slate-800/50 p-1 shadow-2xl overflow-hidden">
+            <AlignmentDisplay
+              token="CSR"
+              alignment={alignmentData?.csr_usdt ?? null}
+              onExecute={handleAlignmentExecute}
+              executionMode={alignmentExecutionMode}
+            />
+          </div>
+          <div className="bg-slate-900/40 backdrop-blur-xl rounded-3xl border border-slate-800/50 p-6 shadow-xl hover:border-slate-700/50 transition-colors">
+            <MarketContextCard
+              token="CSR"
+              cexData={
+                data?.market_state?.csr_usdt?.latoken_ticker
+                  ? {
+                    bid: data.market_state.csr_usdt.latoken_ticker.bid,
+                    ask: data.market_state.csr_usdt.latoken_ticker.ask,
+                    last: data.market_state.csr_usdt.latoken_ticker.last,
+                    volume24h:
+                      data.market_state.csr_usdt.latoken_ticker
+                        .volume_24h || 0,
+                    source: "LATOKEN",
+                    timestamp: timeAgo(
+                      data.market_state.csr_usdt.latoken_ticker.ts
+                    ),
+                  }
+                  : null
+              }
+              dexData={
+                data?.market_state?.csr_usdt?.uniswap_quote
+                  ? {
+                    executionPrice:
+                      data.market_state.csr_usdt.uniswap_quote
+                        .effective_price_usdt,
+                    gasEstimateUsdt: 0.01,
+                    quoteSize: 100,
+                    source: "Uniswap",
+                    timestamp: timeAgo(
+                      data.market_state.csr_usdt.uniswap_quote.ts
+                    ),
+                  }
+                  : null
+              }
+            />
+          </div>
+          <div className="bg-slate-900/40 backdrop-blur-xl rounded-3xl border border-slate-800/50 p-6 shadow-xl overflow-hidden hover:border-slate-700/50 transition-colors">
+            <QuoteLadder token="CSR" />
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <footer className="text-center text-slate-600 text-xs py-12 border-t border-slate-900">
+        <div className="flex items-center justify-center gap-3 mb-2">
+          <img
+            src="/depollute-logo-256.png"
+            alt="CSR"
+            className="h-6 w-6 grayscale opacity-20"
+          />
+          <span className="font-black tracking-widest uppercase opacity-30">
+            Security Protocol Protected
+          </span>
+        </div>
+        <p>© 2025 Depollute Now • All systems operational</p>
+      </footer>
     </div>
-  );
+
+    {/* Modals */}
+    {showTradePanel && (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div
+          className="absolute inset-0 bg-slate-950/90 backdrop-blur-md"
+          onClick={() => setShowTradePanel(null)}
+        ></div>
+        <div className="relative w-full max-w-lg animate-in zoom-in-95 duration-200">
+          <UniswapTradePanel
+            token={showTradePanel.token}
+            dexPrice={showTradePanel.dexPrice}
+            cexPrice={showTradePanel.cexPrice}
+            direction={showTradePanel.direction}
+            onClose={() => setShowTradePanel(null)}
+          />
+        </div>
+      </div>
+    )}
+  </div>
+);
 }
 
 export default App;
