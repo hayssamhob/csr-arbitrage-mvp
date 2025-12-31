@@ -1381,6 +1381,13 @@ redisConsumer.on('tick', (tick) => {
   const symbol = tick.symbol?.toLowerCase() || "";
   const market = symbol.includes("csr25") ? "csr25_usdt" : "csr_usdt";
 
+  // Debug logging for tick processing
+  console.log(
+    `[Tick] type=${tick.type} symbol=${symbol} source=${
+      tick.source || tick.venue
+    } price=${tick.effective_price_usdt || tick.price}`
+  );
+
   // Handle 'market.tick' (CEX) or 'cex_tick' (legacy)
   // Also handle 'market.tick' from uniswap_v4 as DEX quote
   const source = tick.venue || tick.source;
@@ -1413,8 +1420,8 @@ redisConsumer.on('tick', (tick) => {
     (tick.type === "market.tick" && source === "uniswap_v4")
   ) {
     // DEX quote from Uniswap gateway
-    dashboardData.market_state[market].uniswap_quote = {
-      effective_price_usdt: tick.effective_price_usdt || tick.price, // Handle varying fields
+    const quoteData = {
+      effective_price_usdt: tick.effective_price_usdt || tick.price,
       amount_in: tick.amount_in || 1000,
       amount_out: tick.amount_out,
       gas_estimate_usdt: tick.gas_estimate_usdt || 0.5,
@@ -1424,6 +1431,15 @@ redisConsumer.on('tick', (tick) => {
       tick: tick.tick || null,
       lp_fee_bps: tick.lp_fee_bps || null,
     };
+    console.log(
+      `[DEX] Storing quote for ${market}: price=${quoteData.effective_price_usdt} tick=${quoteData.tick}`
+    );
+
+    // Ensure market object exists
+    if (!dashboardData.market_state[market]) {
+      dashboardData.market_state[market] = {};
+    }
+    dashboardData.market_state[market].uniswap_quote = quoteData;
   }
 
   dashboardData.market_state.ts = now;
