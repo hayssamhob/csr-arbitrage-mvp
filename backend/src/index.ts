@@ -489,16 +489,16 @@ app.get("/api/state", (req, res) => {
         freshness: {
           lbank_age_ms: dashboardData.market_state?.csr_usdt?.lbank_ticker?.ts
             ? Date.now() -
-              new Date(
-                dashboardData.market_state.csr_usdt.lbank_ticker.ts
-              ).getTime()
+            new Date(
+              dashboardData.market_state.csr_usdt.lbank_ticker.ts
+            ).getTime()
             : null,
           uniswap_age_ms: dashboardData.market_state?.csr_usdt?.uniswap_quote
             ?.ts
             ? Date.now() -
-              new Date(
-                dashboardData.market_state.csr_usdt.uniswap_quote.ts
-              ).getTime()
+            new Date(
+              dashboardData.market_state.csr_usdt.uniswap_quote.ts
+            ).getTime()
             : null,
         },
       },
@@ -509,16 +509,16 @@ app.get("/api/state", (req, res) => {
         freshness: {
           lbank_age_ms: dashboardData.market_state?.csr25_usdt?.lbank_ticker?.ts
             ? Date.now() -
-              new Date(
-                dashboardData.market_state.csr25_usdt.lbank_ticker.ts
-              ).getTime()
+            new Date(
+              dashboardData.market_state.csr25_usdt.lbank_ticker.ts
+            ).getTime()
             : null,
           uniswap_age_ms: dashboardData.market_state?.csr25_usdt?.uniswap_quote
             ?.ts
             ? Date.now() -
-              new Date(
-                dashboardData.market_state.csr25_usdt.uniswap_quote.ts
-              ).getTime()
+            new Date(
+              dashboardData.market_state.csr25_usdt.uniswap_quote.ts
+            ).getTime()
             : null,
         },
       },
@@ -623,6 +623,55 @@ app.get("/api/price-deviation-history", async (req, res) => {
 // Orchestrator API: /api/health - aggregated health
 app.get("/api/health", (req, res) => {
   res.json(dashboardData.system_status);
+});
+
+// ============================================================================
+// ADMIN: Kill Switch & Engine Status (Operational Cockpit)
+// ============================================================================
+
+// In-memory kill switch state (persisted to Redis if available)
+let killSwitchActive = false;
+
+// POST /api/admin/kill-switch - Toggle the emergency stop
+app.post("/api/admin/kill-switch", async (req, res) => {
+  const { active } = req.body;
+
+  if (typeof active !== 'boolean') {
+    return res.status(400).json({ success: false, error: 'Invalid body: active must be boolean' });
+  }
+
+  try {
+    killSwitchActive = active;
+    console.log(`[AUDIT] Kill Switch toggled to: ${active} at ${new Date().toISOString()}`);
+
+    // Broadcast to all connected WebSocket clients
+    wsClients.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'KILL_SWITCH_UPDATE',
+          active: killSwitchActive,
+          ts: new Date().toISOString(),
+        }));
+      }
+    });
+
+    return res.json({ success: true, kill_switch_active: killSwitchActive });
+  } catch (error: any) {
+    console.error('Kill switch error:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/admin/engine-status - Current engine state
+app.get("/api/admin/engine-status", (req, res) => {
+  // In production, stealth mode would be checked against Flashbots config status
+  const isStealthMode = process.env.ENABLE_FLASHBOTS === 'true';
+
+  return res.json({
+    kill_switch_active: killSwitchActive,
+    stealth_mode: isStealthMode,
+    ts: new Date().toISOString(),
+  });
 });
 
 // Unified system status - TRUE health for all services
@@ -732,11 +781,11 @@ interface AlignmentResult {
   deviation_pct: number | null;
   band_bps: number;
   status:
-    | "ALIGNED"
-    | "BUY_ON_DEX"
-    | "SELL_ON_DEX"
-    | "NO_ACTION"
-    | "NOT_SUPPORTED_YET";
+  | "ALIGNED"
+  | "BUY_ON_DEX"
+  | "SELL_ON_DEX"
+  | "NO_ACTION"
+  | "NOT_SUPPORTED_YET";
   direction: "BUY" | "SELL" | "NONE";
   required_usdt: number | null;
   required_tokens: number | null;
