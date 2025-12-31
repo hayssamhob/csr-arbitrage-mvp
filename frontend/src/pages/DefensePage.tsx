@@ -6,9 +6,9 @@ import { useEffect, useState } from "react";
 import { AdvancedMetricsCard } from "../components/AdvancedMetricsCard";
 import { AlignmentDisplay } from "../components/AlignmentDisplay";
 import { GlobalStatusBar, type ServiceStatus } from "../components/GlobalStatusBar";
+import { PriceHistoryChart } from "../components/PriceHistory";
 import { QuoteLadder } from "../components/QuoteLadder";
 import { ReadinessScore } from "../components/ReadinessScore";
-import { RecentSwaps } from "../components/RecentSwaps";
 import { SystemHealthPanel } from "../components/SystemHealthPanel";
 
 interface TokenPriceData {
@@ -312,6 +312,7 @@ export function DefensePage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* CSR Section */}
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-slate-300">CSR / USDT</h2>
             <AlignmentDisplay
@@ -320,6 +321,9 @@ export function DefensePage() {
               onExecute={() => {}}
               executionMode="MANUAL"
             />
+            <div className="bg-slate-900/50 rounded-xl border border-slate-800/50 p-4">
+              <PriceHistoryChart token="CSR" />
+            </div>
             <QuoteLadder token="CSR" />
             <AdvancedMetricsCard
               token="CSR"
@@ -331,9 +335,9 @@ export function DefensePage() {
               }))}
               transactions={[]}
             />
-            <RecentSwaps token="CSR" />
           </div>
 
+          {/* CSR25 Section */}
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-slate-300">
               CSR25 / USDT
@@ -344,6 +348,9 @@ export function DefensePage() {
               onExecute={() => {}}
               executionMode="MANUAL"
             />
+            <div className="bg-slate-900/50 rounded-xl border border-slate-800/50 p-4">
+              <PriceHistoryChart token="CSR25" />
+            </div>
             <QuoteLadder token="CSR25" />
             <AdvancedMetricsCard
               token="CSR25"
@@ -355,7 +362,6 @@ export function DefensePage() {
               }))}
               transactions={[]}
             />
-            <RecentSwaps token="CSR25" />
           </div>
         </div>
       </div>

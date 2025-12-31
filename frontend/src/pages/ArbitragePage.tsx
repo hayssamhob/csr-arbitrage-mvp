@@ -50,9 +50,9 @@ function getDexUrl(market: string): string {
   return urls[token] || "#";
 }
 
-// Staleness check - abort if data is older than threshold (5 seconds for CEX, 10 for DEX)
-const STALENESS_THRESHOLD_CEX_MS = 5000;
-const STALENESS_THRESHOLD_DEX_MS = 10000;
+// Staleness check - abort if data is older than threshold (30 seconds for CEX, 60 for DEX)
+const STALENESS_THRESHOLD_CEX_MS = 30000;
+const STALENESS_THRESHOLD_DEX_MS = 60000;
 
 function isDataStale(ts: string | undefined, thresholdMs: number): boolean {
   if (!ts) return true;

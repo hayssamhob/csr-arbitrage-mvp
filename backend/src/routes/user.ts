@@ -721,6 +721,7 @@ async function fetchLatokenBalances(
 }
 
 // Helper to fetch LBank balances using CCXT
+// LBank uses RSA signing - the secret should be the RSA private key
 async function fetchLbankBalances(
   apiKey: string,
   apiSecret: string
@@ -728,10 +729,17 @@ async function fetchLbankBalances(
   const ccxt = require("ccxt");
 
   try {
-    const exchange = new ccxt.lbank({
+    // Use lbank2 which supports the newer v2 API with RSA signing
+    const exchange = new ccxt.lbank2({
       apiKey: apiKey,
       secret: apiSecret,
       enableRateLimit: true,
+      options: {
+        sign: {
+          hash: "sha256",
+          type: "rsa",
+        },
+      },
     });
 
     const balance = await exchange.fetchBalance();

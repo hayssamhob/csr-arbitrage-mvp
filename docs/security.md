@@ -1,189 +1,156 @@
-# Security Documentation
+Security & Financial Integrity Policy
+Project: Depollute Now! CSR Arbitrage Engine Classification: INTERNAL / CONFIDENTIAL Last Updated: December 31, 2025
 
-## Overview
+1. Executive Summary & Zero-Trust Mandate
+This document defines the security standards, cryptographic key management, and operational protocols for the Depollute Now! trading infrastructure.
 
-CSRHub Live Arbitrage handles sensitive financial data and optional custodial wallet control. This document describes the security measures in place.
+Core Philosophy: The system assumes that any single component (frontend, execution server, database) is a hostile environment. Security is enforced via strict compartmentalization, "Verify then Trust" logic, and immutable audit logs.
 
----
+1. Wallet Architecture & Capital Separation
+To mitigate catastrophic risk, we enforce a strict separation between asset storage (Cold) and execution (Hot).
 
-## 1. Authentication & Authorization
+2.1 The Treasury Wallet (Cold Storage)
+Role: Long-term storage of accumulated profits and idle capital.
 
-### Supabase Auth
-- Email magic link authentication (no passwords stored)
-- JWT tokens with short expiration
-- All API endpoints require valid JWT verification
-- Row Level Security (RLS) enforced on all user tables
+Type: Multi-Signature Wallet (Gnosis Safe) or Hardware Wallet.
 
-### Backend Verification
-- Every request is scoped to `user_id` extracted from JWT
-- Service role key used only server-side, never exposed to frontend
+Security: Air-gapped / Offline. Keys never touch a server.
 
----
+Policy: Holds 90% of total AUM. Requires 2-of-3 human signatures to move funds.
 
-## 2. Exchange Credentials (CEX API Keys)
+2.2 The Execution Wallet (Hot Wallet)
+Role: High-frequency trading execution.
 
-### Storage
-- API secrets stored in `exchange_credentials` table
-- Encrypted at rest using AES-256-CBC encryption
-- Encryption key stored in server environment (`CEX_SECRETS_KEY`)
-- Initialization vector (IV) stored alongside encrypted data
+Type: EOA (Externally Owned Account) generated specifically for the bot.
 
-### Decryption
-- Decryption happens **only** server-side at execution time
-- Decrypted secrets are never logged or cached
-- Used immediately for API calls, then discarded from memory
+Security: Private key injected via Secrets Manager (Doppler/Vault) at runtime.
 
-### Revocation
-- Users can delete credentials at any time via Settings page
-- Deletion is immediate and permanent
+Policy:
 
----
+Maximum Balance: Capped at 10% of total AUM.
 
-## 3. Custodial Wallet Control (Optional)
+Auto-Sweep: Profits exceeding the cap are automatically swept to Treasury.
 
-### ⚠️ High Risk Feature
+2.3 User Custodial Wallets (Opt-In)
+Role: Allows the server to execute trades on behalf of a specific user.
 
-Custodial mode allows the server to execute DEX trades without user signature. This is **opt-in only** and requires explicit consent.
+Consent: Requires explicit "I UNDERSTAND THE RISKS" confirmation phrase and checkbox.
 
-### Consent Requirements
-1. User must type confirmation phrase: `"I UNDERSTAND THE RISKS"`
-2. Explicit checkbox acknowledgment
-3. Warning displayed about risks
+Storage: Private keys encrypted using sodium_crypto_secretbox (xsalsa20-poly1305) or AES-256-GCM.
 
-### Private Key Storage
-- Private keys encrypted using libsodium/AES-256-GCM
-- Unique IV per key
-- Encryption key stored in server environment (`CUSTODIAL_WALLET_KEY`)
-- Key material **never** logged
+Key Material: Never logged, never cached beyond the milliseconds required for signing.
 
-### Revocation
-- Users can revoke custodial access at any time
-- Revocation sets `revoked_at` timestamp
-- Revoked wallets cannot be used for AUTO execution
-- Users can request full key deletion
+1. Authentication & Authorization
+3.1 Identity Management (Supabase)
+Method: Email Magic Link / OTP (No password storage risks).
 
-### Audit Logging
-All custodial actions are logged to `audit_log` table:
-- Action type (ENABLE, REVOKE, TRADE)
-- Timestamp
-- Success/failure
-- Error reason if applicable
-- IP address and user agent
+Session: Short-lived JWT tokens (1 hour).
 
----
+Verification: All API endpoints validate the JWT signature before processing.
 
-## 4. Execution Safety
+3.2 Data Access Control (RLS)
+Database Level: PostgreSQL Row Level Security (RLS) is enabled on all sensitive tables (user_settings, exchange_credentials, orders).
 
-### Kill Switch
-- Global kill switch stops ALL trade execution
-- Enforced **server-side** in execution service
-- Cannot be bypassed from frontend
+Policy: A user can only SELECT/UPDATE rows where user_id matches their JWT.
 
-### Risk Limits
-Risk limits are enforced server-side before any execution:
-- `max_order_usdt` — Maximum single trade size
-- `max_daily_usdt` — Daily volume limit
-- `min_edge_bps` — Minimum edge required
-- `max_slippage_bps` — Maximum allowed slippage
+Service Role: The Node.js backend uses the Service Role Key strictly for background jobs (Arbitrage Execution), never for user-facing API routes.
 
-### Execution Modes
-1. **PAPER** — Simulation only, no real trades
-2. **MANUAL** — User signs DEX tx, CEX via API
-3. **AUTO** — Server executes both legs (requires custodial wallet)
+1. Secrets & Credential Management
+4.1 System Secrets (Infrastructure)
+Definition: Database URLs, Redis passwords, Third-party API Keys (Infura, Etherscan).
 
----
+Storage: Managed via Doppler or AWS Secrets Manager.
 
-## 5. Data Protection
+Prohibited: No .env files in production. No secrets in Git.
 
-### What We Store
-- User email (from Supabase Auth)
-- Wallet addresses (public)
-- Exchange API keys (encrypted)
-- Risk limit preferences
-- Trade history
-- Market snapshots
+4.2 User Exchange Credentials (CEX API Keys)
+Storage: Stored in exchange_credentials table.
 
-### What We Never Store
-- Passwords (magic link auth)
-- Plaintext private keys
-- Session tokens (JWT only)
+Encryption: AES-256-GCM (Authenticated Encryption).
 
-### Data Access
-- All queries filtered by `user_id`
-- RLS policies prevent cross-user access
-- Service role used only for backend operations
+Note: Previous implementations using CBC are to be migrated to GCM.
 
----
+Key Management: The Master Encryption Key (CEX_SECRETS_KEY) is injected into the server environment RAM at boot. It is never written to disk.
 
-## 6. External API Security
+Lifecycle:
 
-### Server-Side Only
-All sensitive API calls are made server-side:
-- Etherscan (transaction history)
-- LBank/LATOKEN (trading APIs)
-- Uniswap RPC (quote fetching)
+User inputs API Key.
 
-### Rate Limiting & Caching
-- 30-second cache for transaction data
-- Exponential backoff for retries
-- Never expose API keys to frontend
+Server encrypts and stores.
 
----
+During trade execution, server decrypts in memory.
 
-## 7. Infrastructure
+Keys are scrubbed from memory immediately after request dispatch.
 
-### Production Environment
-- VPS hosted on Vultr Amsterdam
-- HTTPS only via Let's Encrypt SSL
-- Nginx reverse proxy
-- PM2 process manager
+1. Execution Safety & MEV Protection
+5.1 Flashbots Integration (Anti-Sandwich)
+Protocol: All Uniswap transactions must be routed through a private RPC (Flashbots Protect).
 
-### Secrets Management
-- Production secrets in VPS environment variables
-- `.env` files for local development only
-- `.env` files gitignored
+Benefit: Transactions skip the public mempool, preventing front-running and sandwich attacks.
 
----
+Failure Mode: If a trade reverts, it is never included in a block, saving gas fees.
 
-## 8. Incident Response
+5.2 The "Kill Switch"
+Scope: Global server-side lock. Stops ALL trade execution immediately.
 
-### If You Suspect Compromise
-1. Enable kill switch immediately
-2. Revoke custodial wallet access
-3. Rotate CEX API keys on exchange websites
-4. Contact support
+Triggers:
 
-### Reporting
-Report security issues to: security@depollutenow.com
+Manual Admin Override (Dashboard).
 
----
+Automated Circuit Breaker:
 
-## 9. Limitations & Disclaimers
+Spread deviation > 10% in 1 minute.
 
-### Not Financial Advice
-This platform provides tools for market monitoring and trade execution. Users are responsible for their own trading decisions.
+Gas price > 200 Gwei.
 
-### Custodial Risk
-By enabling custodial mode, you grant the server control over your wallet's funds. Only deposit what you can afford to lose.
+Consecutive execution failures > 5.
 
-### No Guarantees
-We do not guarantee profit, uptime, or protection against market conditions or smart contract failures.
+5.3 Risk Limits (Hard Coded)
+Before any transaction is signed, the engine enforces:
 
----
+MAX_SLIPPAGE_BPS: 50 (0.5%)
 
-## 10. Compliance Checklist
+MIN_PROFIT_THRESHOLD: $5.00 (cover gas + operations)
 
-| Control | Status |
-|---------|--------|
-| RLS on all user tables | ✅ |
-| Secrets encrypted at rest | ✅ |
-| Kill switch server-enforced | ✅ |
-| Risk limits server-enforced | ✅ |
-| Audit logging for custodial | ✅ |
-| No plaintext key storage | ✅ |
-| HTTPS only in production | ✅ |
-| JWT verification on all endpoints | ✅ |
+MAX_TRADE_SIZE: Defined per user/tier.
 
----
+1. Infrastructure & OpSec
+6.1 Production Environment
+Host: Vultr (Amsterdam Region - Low latency to Binance/EU exchanges).
 
-*Last updated: December 2024*
+Network:
+
+Nginx Reverse Proxy: Terminates SSL (Let's Encrypt).
+
+Firewall: Only ports 80/443 open. Database/Redis ports closed to public internet.
+
+Containerization: Services run in isolated Docker containers.
+
+6.2 Audit Logging
+Immutable Logs: Every trade, error, and custodial action (Enable/Revoke) is logged to the audit_log table.
+
+Fields: timestamp, user_id, action_type, asset_pair, execution_price, tx_hash.
+
+1. Compliance & Privacy
+7.1 Data Minimization
+We store: Wallet public addresses, Trade history (for tax reporting).
+
+We do NOT store: Plaintext private keys, Passwords, Credit Card info.
+
+7.2 GDPR/Right to Erasure
+Users may request full account deletion.
+
+Action: All off-chain data (email, settings) is wiped. On-chain transaction history remains immutable on Ethereum.
+
+1. Incident Response Protocol
+IF A COMPROMISE IS SUSPECTED:
+
+ACTIVATE KILL SWITCH: npm run emergency:stop or via Admin Panel.
+
+DRAIN HOT WALLET: Admin executes immediate sweep of Execution Wallet to Cold Storage.
+
+ROTATE KEYS: Revoke old CEX API keys; Generate new System Private Keys.
+
+NOTIFY: Email <security@depollutenow.com> and alert community if funds are at risk.
+
+Authorized by: Depollute Now! Technical Leadership Status: Live & Enforced

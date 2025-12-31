@@ -455,17 +455,25 @@ app.get("/api/dashboard", (req, res) => {
 });
 
 // Price history API for charts
-app.get("/api/history/:market", (req, res) => {
-  const market = req.params.market as "csr_usdt" | "csr25_usdt";
-  if (market !== "csr_usdt" && market !== "csr25_usdt") {
-    return res
-      .status(400)
-      .json({ error: "Invalid market. Use csr_usdt or csr25_usdt" });
+app.get("/api/price-history/:market", (req, res) => {
+  const market = req.params.market;
+  if (!["csr_usdt", "csr25_usdt"].includes(market)) {
+    return res.status(400).json({ error: "Invalid market" });
   }
+
+  // Add CORS headers for frontend access
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept"
+  );
+
+  // Return the last 20 price points (can be empty if no data yet)
+  const marketKey = market as "csr_usdt" | "csr25_usdt";
   res.json({
     market,
-    points: priceHistory[market],
-    count: priceHistory[market].length,
+    points: priceHistory[marketKey] || [],
+    count: (priceHistory[marketKey] || []).length,
   });
 });
 
@@ -481,16 +489,16 @@ app.get("/api/state", (req, res) => {
         freshness: {
           lbank_age_ms: dashboardData.market_state?.csr_usdt?.lbank_ticker?.ts
             ? Date.now() -
-            new Date(
-              dashboardData.market_state.csr_usdt.lbank_ticker.ts
-            ).getTime()
+              new Date(
+                dashboardData.market_state.csr_usdt.lbank_ticker.ts
+              ).getTime()
             : null,
           uniswap_age_ms: dashboardData.market_state?.csr_usdt?.uniswap_quote
             ?.ts
             ? Date.now() -
-            new Date(
-              dashboardData.market_state.csr_usdt.uniswap_quote.ts
-            ).getTime()
+              new Date(
+                dashboardData.market_state.csr_usdt.uniswap_quote.ts
+              ).getTime()
             : null,
         },
       },
@@ -501,16 +509,16 @@ app.get("/api/state", (req, res) => {
         freshness: {
           lbank_age_ms: dashboardData.market_state?.csr25_usdt?.lbank_ticker?.ts
             ? Date.now() -
-            new Date(
-              dashboardData.market_state.csr25_usdt.lbank_ticker.ts
-            ).getTime()
+              new Date(
+                dashboardData.market_state.csr25_usdt.lbank_ticker.ts
+              ).getTime()
             : null,
           uniswap_age_ms: dashboardData.market_state?.csr25_usdt?.uniswap_quote
             ?.ts
             ? Date.now() -
-            new Date(
-              dashboardData.market_state.csr25_usdt.uniswap_quote.ts
-            ).getTime()
+              new Date(
+                dashboardData.market_state.csr25_usdt.uniswap_quote.ts
+              ).getTime()
             : null,
         },
       },
@@ -531,18 +539,21 @@ app.get("/api/dex-quotes/fallback", async (req, res) => {
     }
 
     // Get latest price snapshots for both tokens
-    const response = await fetch(`${supabaseUrl}/rest/v1/price_snapshots?select=market,cex_price,dex_price,spread_bps,timestamp&order=timestamp.desc&limit=2`, {
-      headers: {
-        'apikey': supabaseKey,
-        'Authorization': `Bearer ${supabaseKey}`
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/price_snapshots?select=market,cex_price,dex_price,spread_bps,timestamp&order=timestamp.desc&limit=2`,
+      {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
       }
-    });
+    );
 
     if (!response.ok) {
-      throw new Error('Failed to fetch price snapshots');
+      throw new Error("Failed to fetch price snapshots");
     }
 
-    const snapshots = await response.json() as any[];
+    const snapshots = (await response.json()) as any[];
 
     // Transform to quote format
     const quotes = snapshots.map((snap: any) => ({
@@ -551,12 +562,12 @@ app.get("/api/dex-quotes/fallback", async (req, res) => {
       dex_price: parseFloat(snap.dex_price),
       spread_bps: parseFloat(snap.spread_bps),
       timestamp: snap.timestamp,
-      source: "database_fallback"
+      source: "database_fallback",
     }));
 
     res.json({ quotes, source: "database_fallback" });
   } catch (error: any) {
-    console.error('Fallback quotes error:', error.message);
+    console.error("Fallback quotes error:", error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -572,18 +583,21 @@ app.get("/api/price-deviation-history", async (req, res) => {
     }
 
     // Get last 20 price snapshots
-    const response = await fetch(`${supabaseUrl}/rest/v1/price_snapshots?select=market,cex_price,dex_price,spread_bps,timestamp&order=timestamp.desc&limit=20`, {
-      headers: {
-        'apikey': supabaseKey,
-        'Authorization': `Bearer ${supabaseKey}`
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/price_snapshots?select=market,cex_price,dex_price,spread_bps,timestamp&order=timestamp.desc&limit=20`,
+      {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
       }
-    });
+    );
 
     if (!response.ok) {
-      throw new Error('Failed to fetch price deviation history');
+      throw new Error("Failed to fetch price deviation history");
     }
 
-    const snapshots = await response.json() as any[];
+    const snapshots = (await response.json()) as any[];
 
     // Transform to expected format
     const history = snapshots.map((snap: any) => ({
@@ -592,16 +606,16 @@ app.get("/api/price-deviation-history", async (req, res) => {
       dex_price: parseFloat(snap.dex_price),
       spread_bps: parseFloat(snap.spread_bps),
       timestamp: snap.timestamp,
-      deviation_percent: Math.abs(parseFloat(snap.spread_bps) / 100)
+      deviation_percent: Math.abs(parseFloat(snap.spread_bps) / 100),
     }));
 
     res.json({
       history,
       count: history.length,
-      source: "database"
+      source: "database",
     });
   } catch (error: any) {
-    console.error('Price deviation history error:', error.message);
+    console.error("Price deviation history error:", error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -614,62 +628,73 @@ app.get("/api/health", (req, res) => {
 // Unified system status - TRUE health for all services
 app.get("/api/system/status", async (req, res) => {
   const services = [
-    { name: 'lbank-gateway', url: 'http://localhost:3001/ready' },
-    { name: 'latoken-gateway', url: 'http://localhost:3006/ready' },
-    { name: 'strategy', url: 'http://localhost:3003/ready' },
-    { name: 'uniswap-v4-gateway', url: 'http://localhost:3002/health' },
+    { name: "lbank-gateway", url: "http://localhost:3001/ready" },
+    { name: "latoken-gateway", url: "http://localhost:3006/ready" },
+    { name: "strategy", url: "http://localhost:3003/ready" },
+    { name: "uniswap-v4-gateway", url: "http://localhost:3002/health" },
   ];
 
-  const results = await Promise.all(services.map(async (svc) => {
-    try {
-      const response = await axios.get(svc.url, { timeout: 5000 });
-      const data = response.data;
+  const results = await Promise.all(
+    services.map(async (svc) => {
+      try {
+        const response = await axios.get(svc.url, { timeout: 5000 });
+        const data = response.data;
 
-      let status: 'ok' | 'degraded' | 'down' = 'ok';
-      if (data.status === 'unhealthy' || data.status === 'down') status = 'down';
-      else if (data.status === 'degraded') status = 'degraded';
+        let status: "ok" | "degraded" | "down" = "ok";
+        if (data.status === "unhealthy" || data.status === "down")
+          status = "down";
+        else if (data.status === "degraded") status = "degraded";
 
-      // Check staleness
-      if (data.last_message_ts) {
-        const staleness = Date.now() - new Date(data.last_message_ts).getTime();
-        if (staleness > 60000) status = 'down';
-        else if (staleness > 15000) status = 'degraded';
+        // Check staleness
+        if (data.last_message_ts) {
+          const staleness =
+            Date.now() - new Date(data.last_message_ts).getTime();
+          if (staleness > 60000) status = "down";
+          else if (staleness > 15000) status = "degraded";
+        }
+        if (data.connected === false) status = "down";
+
+        return {
+          name: svc.name,
+          status,
+          lastCheck: new Date().toISOString(),
+          lastSuccess: status === "ok" ? new Date().toISOString() : null,
+          lastError: status !== "ok" ? data.error || "Service issue" : null,
+          details: {
+            connected: data.connected,
+            is_stale: data.is_stale,
+            reconnect_count: data.reconnect_count,
+            last_message_ts: data.last_message_ts,
+          },
+        };
+      } catch (err: any) {
+        return {
+          name: svc.name,
+          status: "down" as const,
+          lastCheck: new Date().toISOString(),
+          lastSuccess: null,
+          lastError:
+            err.code === "ECONNREFUSED" ? "Connection refused" : err.message,
+          details: {},
+        };
       }
-      if (data.connected === false) status = 'down';
+    })
+  );
 
-      return {
-        name: svc.name,
-        status,
-        lastCheck: new Date().toISOString(),
-        lastSuccess: status === 'ok' ? new Date().toISOString() : null,
-        lastError: status !== 'ok' ? (data.error || 'Service issue') : null,
-        details: {
-          connected: data.connected,
-          is_stale: data.is_stale,
-          reconnect_count: data.reconnect_count,
-          last_message_ts: data.last_message_ts,
-        },
-      };
-    } catch (err: any) {
-      return {
-        name: svc.name,
-        status: 'down' as const,
-        lastCheck: new Date().toISOString(),
-        lastSuccess: null,
-        lastError: err.code === 'ECONNREFUSED' ? 'Connection refused' : err.message,
-        details: {},
-      };
-    }
-  }));
-
-  const allOk = results.every(r => r.status === 'ok');
-  const anyDown = results.some(r => r.status === 'down');
+  const allOk = results.every((r) => r.status === "ok");
+  const anyDown = results.some((r) => r.status === "down");
 
   res.json({
-    status: anyDown ? 'down' : allOk ? 'ok' : 'degraded',
+    status: anyDown ? "down" : allOk ? "ok" : "degraded",
     ts: new Date().toISOString(),
     services: results,
-    external: { supabase: { name: 'supabase', status: 'ok', lastCheck: new Date().toISOString() } },
+    external: {
+      supabase: {
+        name: "supabase",
+        status: "ok",
+        lastCheck: new Date().toISOString(),
+      },
+    },
   });
 });
 
@@ -707,11 +732,11 @@ interface AlignmentResult {
   deviation_pct: number | null;
   band_bps: number;
   status:
-  | "ALIGNED"
-  | "BUY_ON_DEX"
-  | "SELL_ON_DEX"
-  | "NO_ACTION"
-  | "NOT_SUPPORTED_YET";
+    | "ALIGNED"
+    | "BUY_ON_DEX"
+    | "SELL_ON_DEX"
+    | "NO_ACTION"
+    | "NOT_SUPPORTED_YET";
   direction: "BUY" | "SELL" | "NONE";
   required_usdt: number | null;
   required_tokens: number | null;
@@ -859,15 +884,23 @@ app.get("/api/alignment/:market", async (req, res) => {
       return res.json(result);
     }
 
-    // Simplified logic for single-quote Redis model
-    result.required_usdt = 1000; // Default size for display
+    // Calculate trade size based on deviation percentage
+    // Larger deviation = larger trade size needed to move price back
+    // Base: $100 per 1% deviation, min $100, max $10,000
+    const absDeviation = Math.abs(result.deviation_pct || 0);
+    const calculatedSize = Math.min(
+      Math.max(absDeviation * 100, 100), // $100 per 1% deviation, min $100
+      10000 // Max $10,000
+    );
+    result.required_usdt = Math.round(calculatedSize);
     result.required_tokens = dexQuote
-      ? Math.round((1000 / dexQuote.effective_price_usdt) * 100) / 100
+      ? Math.round((calculatedSize / dexQuote.effective_price_usdt) * 100) / 100
       : 0;
     result.expected_exec_price = result.dex_exec_price;
-    result.price_impact_pct = 0.5; // Estimated
+    result.price_impact_pct = Math.min(absDeviation * 0.1, 5); // Estimate: 0.1% impact per 1% deviation, max 5%
     result.network_cost_usd = dexQuote?.gas_estimate_usdt || 0.01;
-    result.confidence = "HIGH";
+    result.confidence =
+      absDeviation > 5 ? "HIGH" : absDeviation > 2 ? "MEDIUM" : "LOW";
     result.reason = "computed_from_redis_tick";
 
     // Calculate alignment status based on deviation
