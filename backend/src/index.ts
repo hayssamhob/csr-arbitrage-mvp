@@ -1378,14 +1378,18 @@ redisConsumer.on('tick', (tick) => {
   }
 
   // Determine which market this tick belongs to
-  const symbol = tick.symbol?.toLowerCase() || '';
-  const market = symbol.includes('csr25') ? 'csr25_usdt' : 'csr_usdt';
+  const symbol = tick.symbol?.toLowerCase() || "";
+  const market = symbol.includes("csr25") ? "csr25_usdt" : "csr_usdt";
 
   // Handle 'market.tick' (CEX) or 'cex_tick' (legacy)
-  if (tick.type === 'market.tick' || tick.type === 'cex_tick') {
-    // Map venue (gateway) to source (backend state)
-    const source = tick.venue || tick.source;
+  // Also handle 'market.tick' from uniswap_v4 as DEX quote
+  const source = tick.venue || tick.source;
 
+  if (
+    (tick.type === "market.tick" || tick.type === "cex_tick") &&
+    source !== "uniswap_v4"
+  ) {
+    // CEX tick from LBank or LATOKEN
     const tickerData = {
       bid: tick.bid,
       ask: tick.ask,
@@ -1395,14 +1399,19 @@ redisConsumer.on('tick', (tick) => {
       source: source,
     };
 
-    if (source === 'lbank') {
+    if (source === "lbank") {
       dashboardData.market_state[market].lbank_ticker = tickerData;
-    } else if (source === 'latoken') {
+    } else if (source === "latoken") {
       dashboardData.market_state[market].latoken_ticker = tickerData;
     }
   }
-  // Handle 'market.quote' (DEX) or 'dex_quote' (legacy)
-  else if (tick.type === 'market.quote' || tick.type === 'dex_quote' || tick.type === 'uniswap.quote') {
+  // Handle DEX quotes: 'market.quote', 'dex_quote', 'uniswap.quote', or 'market.tick' from uniswap_v4
+  else if (
+    tick.type === "market.quote" ||
+    tick.type === "dex_quote" ||
+    tick.type === "uniswap.quote" ||
+    (tick.type === "market.tick" && source === "uniswap_v4")
+  ) {
     // DEX quote from Uniswap gateway
     dashboardData.market_state[market].uniswap_quote = {
       effective_price_usdt: tick.effective_price_usdt || tick.price, // Handle varying fields
