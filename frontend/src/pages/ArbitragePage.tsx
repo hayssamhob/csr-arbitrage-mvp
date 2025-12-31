@@ -15,6 +15,7 @@
 // Zap icon removed - not needed
 import { useEffect, useState } from "react";
 import { AdvancedMetricsCard } from "../components/AdvancedMetricsCard";
+import { ArbitrageExecutionPanel } from "../components/ArbitrageExecutionPanel";
 import { CustodialRiskModal } from "../components/CustodialRiskModal";
 import { EngineControl } from "../components/EngineControl";
 import { Footer } from "../components/Footer";
