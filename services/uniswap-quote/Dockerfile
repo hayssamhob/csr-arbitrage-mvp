@@ -10,7 +10,7 @@ COPY services/uniswap-quote/package.json ./services/uniswap-quote/
 WORKDIR /app/packages/shared
 RUN npm install
 WORKDIR /app/services/uniswap-quote
-RUN npm install --omit=dev && npm install -g typescript && npm install --save-dev @types/node
+RUN npm install --legacy-peer-deps --omit=dev && npm install -g typescript && npm install --save-dev @types/node
 
 # Copy source code
 COPY packages/shared /app/packages/shared
