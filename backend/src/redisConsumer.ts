@@ -58,7 +58,6 @@ export class RedisConsumer extends EventEmitter {
         try {
             this.redis = new Redis(this.redisUrl, {
                 maxRetriesPerRequest: 3,
-                retryDelayOnFailover: 1000,
                 lazyConnect: true,
             });
 
@@ -97,8 +96,9 @@ export class RedisConsumer extends EventEmitter {
                     '>'
                 );
 
-                if (results) {
-                    for (const [, messages] of results) {
+                if (results && Array.isArray(results)) {
+                    for (const streamData of results) {
+                        const [, messages] = streamData as [string, [string, string[]][]];
                         for (const [id, fields] of messages) {
                             try {
                                 // Parse the message
@@ -107,7 +107,7 @@ export class RedisConsumer extends EventEmitter {
                                     this.emit('tick', data);
                                 }
                                 // Acknowledge the message
-                                await this.redis.xack(TOPICS.MARKET_DATA, CONSUMER_GROUP, id);
+                                await this.redis!.xack(TOPICS.MARKET_DATA, CONSUMER_GROUP, id);
                             } catch (parseError) {
                                 console.error('[RedisConsumer] Failed to parse message:', parseError);
                             }
