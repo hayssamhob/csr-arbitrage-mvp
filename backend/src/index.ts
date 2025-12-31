@@ -897,9 +897,7 @@ app.get("/api/debug/timestamps", async (_req, res) => {
   res.status(501).json({ error: "Debug timestamps needs reimplementation for Redis V4 Model" });
 });
 
-app.get("/api/ladder/:token", async (req, res) => {
-  res.status(501).json({ error: "Ladder endpoint needs reimplementation for Redis V4 Model" });
-});
+// (Legacy ladder endpoint removed)
 
 // ============================================================================
 // Token Swap History - Using RPC Transfer events with pagination
@@ -1269,32 +1267,37 @@ redisConsumer.on('tick', (tick) => {
   const symbol = tick.symbol?.toLowerCase() || '';
   const market = symbol.includes('csr25') ? 'csr25_usdt' : 'csr_usdt';
 
-  if (tick.type === 'cex_tick') {
-    // CEX tick from LBank or Latoken
+  // Handle 'market.tick' (CEX) or 'cex_tick' (legacy)
+  if (tick.type === 'market.tick' || tick.type === 'cex_tick') {
+    // Map venue (gateway) to source (backend state)
+    const source = tick.venue || tick.source;
+
     const tickerData = {
       bid: tick.bid,
       ask: tick.ask,
       last: tick.last,
       volume_24h: tick.volume_24h,
       ts: tick.ts,
-      source: tick.source,
+      source: source,
     };
 
-    if (tick.source === 'lbank') {
+    if (source === 'lbank') {
       dashboardData.market_state[market].lbank_ticker = tickerData;
-    } else if (tick.source === 'latoken') {
+    } else if (source === 'latoken') {
       dashboardData.market_state[market].latoken_ticker = tickerData;
     }
-  } else if (tick.type === 'dex_quote') {
+  }
+  // Handle 'market.quote' (DEX) or 'dex_quote' (legacy)
+  else if (tick.type === 'market.quote' || tick.type === 'dex_quote' || tick.type === 'uniswap.quote') {
     // DEX quote from Uniswap gateway
     dashboardData.market_state[market].uniswap_quote = {
-      effective_price_usdt: tick.effective_price_usdt,
-      amount_in: tick.amount_in,
+      effective_price_usdt: tick.effective_price_usdt || tick.price, // Handle varying fields
+      amount_in: tick.amount_in || 1000,
       amount_out: tick.amount_out,
-      gas_estimate_usdt: tick.gas_estimate_usdt,
-      route: tick.route,
+      gas_estimate_usdt: tick.gas_estimate_usdt || 0.5,
+      route: tick.route || 'v4_pool',
       ts: tick.ts,
-      source: tick.source,
+      source: tick.source || 'uniswap_v4',
     };
   }
 
