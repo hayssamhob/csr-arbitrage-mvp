@@ -403,10 +403,28 @@ async function fetchServiceData() {
       }
     }
 
-    // Update dashboard data
+    // Update dashboard data - PRESERVE uniswap_quote from Redis tick handler
+    // The Redis consumer stores live V4 quotes directly to dashboardData.market_state
+    const preservedCsrQuote =
+      dashboardData.market_state?.csr_usdt?.uniswap_quote;
+    const preservedCsr25Quote =
+      dashboardData.market_state?.csr25_usdt?.uniswap_quote;
+
     dashboardData = {
       ts: now,
-      market_state: marketState,
+      market_state: {
+        ...marketState,
+        csr_usdt: {
+          ...marketState?.csr_usdt,
+          uniswap_quote:
+            preservedCsrQuote || marketState?.csr_usdt?.uniswap_quote,
+        },
+        csr25_usdt: {
+          ...marketState?.csr25_usdt,
+          uniswap_quote:
+            preservedCsr25Quote || marketState?.csr25_usdt?.uniswap_quote,
+        },
+      },
       decision: decision,
       system_status: {
         ts: now,
@@ -1435,11 +1453,23 @@ redisConsumer.on('tick', (tick) => {
       `[DEX] Storing quote for ${market}: price=${quoteData.effective_price_usdt} tick=${quoteData.tick}`
     );
 
-    // Ensure market object exists
-    if (!dashboardData.market_state[market]) {
-      dashboardData.market_state[market] = {};
+    // Explicitly store to the correct market object
+    if (market === "csr_usdt") {
+      if (!dashboardData.market_state.csr_usdt) {
+        dashboardData.market_state.csr_usdt = {};
+      }
+      dashboardData.market_state.csr_usdt.uniswap_quote = quoteData;
+    } else if (market === "csr25_usdt") {
+      if (!dashboardData.market_state.csr25_usdt) {
+        dashboardData.market_state.csr25_usdt = {};
+      }
+      dashboardData.market_state.csr25_usdt.uniswap_quote = quoteData;
     }
-    dashboardData.market_state[market].uniswap_quote = quoteData;
+    console.log(
+      `[DEX] Verified: csr_usdt.uniswap_quote=${!!dashboardData.market_state
+        .csr_usdt?.uniswap_quote} csr25_usdt.uniswap_quote=${!!dashboardData
+        .market_state.csr25_usdt?.uniswap_quote}`
+    );
   }
 
   dashboardData.market_state.ts = now;
