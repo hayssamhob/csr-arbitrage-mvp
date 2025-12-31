@@ -14,7 +14,7 @@ const TOPIC_MARKET_DATA = "market.data";
 
 // V4 Quoter ABI - quoteExactInputSingle returns quote for a single-hop swap
 const QUOTER_ABI = [
-  "function quoteExactInputSingle((address poolManager, tuple(address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) poolKey, bool zeroForOne, uint128 exactAmount, bytes hookData) params) external returns (uint256 amountOut, uint256 gasEstimate)",
+  "function quoteExactInputSingle(tuple(tuple(address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) poolKey, bool zeroForOne, uint128 exactAmount, bytes hookData) params) external returns (uint256 amountOut, uint256 gasEstimate)",
 ];
 
 // Token definitions with decimals
@@ -105,7 +105,6 @@ async function fetchQuote(poolConfig: PoolConfig): Promise<{
     };
 
     const params = {
-      poolManager: CONTRACTS.UNISWAP_V4_MANAGER,
       poolKey,
       zeroForOne,
       exactAmount: amountIn,
