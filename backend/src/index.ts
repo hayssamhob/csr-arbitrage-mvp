@@ -836,7 +836,7 @@ app.get("/api/alignment/:market", async (req, res) => {
       result.ts_dex = typeof dexQuote.ts === 'string' ? new Date(dexQuote.ts).getTime() / 1000 : dexQuote.ts;
       result.dex_exec_price = dexQuote.effective_price_usdt;
 
-      const dexAgeSec = now / 1000 - result.ts_dex;
+      const dexAgeSec = now / 1000 - result.ts_dex!;
       if (dexAgeSec > DEX_STALE_SEC) {
         issues.push(`dex_stale: ${Math.round(dexAgeSec)}s`);
       }
@@ -850,7 +850,7 @@ app.get("/api/alignment/:market", async (req, res) => {
     }
 
     // If there are critical issues, return with whatever data we have
-    if (issues.length > 0 && (!cexMid || validQuotes.length === 0)) {
+    if (issues.length > 0 && (!cexMid || !dexQuote)) {
       result.reason = issues.join("; ");
       return res.json(result);
     }
