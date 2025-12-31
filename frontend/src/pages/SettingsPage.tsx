@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 import { Footer } from "../components/Footer";
+import { PoolConfigManager } from "../components/PoolConfigManager";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../lib/supabase";
 
@@ -317,10 +318,11 @@ export function SettingsPage() {
         {/* Message */}
         {message && (
           <div
-            className={`p-4 rounded-xl text-sm ${message.type === "success"
+            className={`p-4 rounded-xl text-sm ${
+              message.type === "success"
                 ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
                 : "bg-red-500/20 text-red-300 border border-red-500/30"
-              }`}
+            }`}
           >
             {message.text}
           </div>
@@ -546,9 +548,9 @@ export function SettingsPage() {
                       setRiskLimits((s) =>
                         s
                           ? {
-                            ...s,
-                            max_order_usdt: +e.target.value,
-                          }
+                              ...s,
+                              max_order_usdt: +e.target.value,
+                            }
                           : s
                       )
                     }
@@ -566,9 +568,9 @@ export function SettingsPage() {
                       setRiskLimits((s) =>
                         s
                           ? {
-                            ...s,
-                            daily_limit_usdt: +e.target.value,
-                          }
+                              ...s,
+                              daily_limit_usdt: +e.target.value,
+                            }
                           : s
                       )
                     }
@@ -586,9 +588,9 @@ export function SettingsPage() {
                       setRiskLimits((s) =>
                         s
                           ? {
-                            ...s,
-                            min_edge_bps: +e.target.value,
-                          }
+                              ...s,
+                              min_edge_bps: +e.target.value,
+                            }
                           : s
                       )
                     }
@@ -606,9 +608,9 @@ export function SettingsPage() {
                       setRiskLimits((s) =>
                         s
                           ? {
-                            ...s,
-                            max_slippage_bps: +e.target.value,
-                          }
+                              ...s,
+                              max_slippage_bps: +e.target.value,
+                            }
                           : s
                       )
                     }
@@ -626,9 +628,9 @@ export function SettingsPage() {
                       setRiskLimits((s) =>
                         s
                           ? {
-                            ...s,
-                            kill_switch: e.target.checked,
-                          }
+                              ...s,
+                              kill_switch: e.target.checked,
+                            }
                           : s
                       )
                     }
@@ -650,6 +652,9 @@ export function SettingsPage() {
             </>
           )}
         </div>
+
+        {/* DEX Pool Configuration */}
+        <PoolConfigManager />
       </div>
       <Footer />
     </div>

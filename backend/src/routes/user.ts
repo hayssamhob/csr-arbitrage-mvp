@@ -1937,4 +1937,170 @@ router.get("/system/status", async (_req, res) => {
   });
 });
 
+// =============================================================================
+// DEX Pool Configuration Routes
+// =============================================================================
+
+// GET /api/me/pool-configs - List user's pool configs and global pools
+router.get("/pool-configs", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const supabase = getSupabase();
+  if (!supabase) {
+    return res.status(503).json({ error: "Database not configured" });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("dex_pool_configs")
+      .select("*")
+      .or(`user_id.eq.${req.userId},is_global.eq.true`)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    res.json({ pools: data || [] });
+  } catch (err: any) {
+    console.error("Error fetching pool configs:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/me/pool-configs - Add a new pool config
+router.post("/pool-configs", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const supabase = getSupabase();
+  if (!supabase) {
+    return res.status(503).json({ error: "Database not configured" });
+  }
+
+  const {
+    chain_id = 1,
+    dex_protocol = "uniswap_v4",
+    pool_id,
+    base_symbol,
+    quote_symbol = "USDT",
+    base_token_address,
+    quote_token_address,
+    base_decimals = 18,
+    quote_decimals = 6,
+    fee_bps,
+    tick_spacing,
+    hook_address,
+  } = req.body;
+
+  // Validate required fields
+  if (!pool_id || !base_symbol || !base_token_address || !quote_token_address) {
+    return res.status(400).json({
+      error: "Missing required fields: pool_id, base_symbol, base_token_address, quote_token_address",
+    });
+  }
+
+  // Validate pool_id format (bytes32)
+  if (!/^0x[a-fA-F0-9]{64}$/.test(pool_id)) {
+    return res.status(400).json({ error: "Invalid pool_id format (must be bytes32)" });
+  }
+
+  // Validate addresses
+  if (!/^0x[a-fA-F0-9]{40}$/.test(base_token_address) || !/^0x[a-fA-F0-9]{40}$/.test(quote_token_address)) {
+    return res.status(400).json({ error: "Invalid token address format" });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("dex_pool_configs")
+      .insert({
+        user_id: req.userId,
+        chain_id,
+        dex_protocol,
+        pool_id,
+        base_symbol: base_symbol.toUpperCase(),
+        quote_symbol: quote_symbol.toUpperCase(),
+        base_token_address,
+        quote_token_address,
+        base_decimals,
+        quote_decimals,
+        fee_bps,
+        tick_spacing,
+        hook_address,
+        is_active: true,
+        is_global: false,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === "23505") {
+        return res.status(409).json({ error: "Pool already exists for this chain" });
+      }
+      throw error;
+    }
+
+    res.status(201).json({ pool: data });
+  } catch (err: any) {
+    console.error("Error creating pool config:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/me/pool-configs/:id - Update a pool config
+router.put("/pool-configs/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const supabase = getSupabase();
+  if (!supabase) {
+    return res.status(503).json({ error: "Database not configured" });
+  }
+
+  const { id } = req.params;
+  const updates = req.body;
+
+  // Prevent updating global pools or changing ownership
+  delete updates.is_global;
+  delete updates.user_id;
+  delete updates.id;
+
+  try {
+    const { data, error } = await supabase
+      .from("dex_pool_configs")
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("user_id", req.userId)
+      .eq("is_global", false)
+      .select()
+      .single();
+
+    if (error) throw error;
+    if (!data) {
+      return res.status(404).json({ error: "Pool not found or cannot be modified" });
+    }
+
+    res.json({ pool: data });
+  } catch (err: any) {
+    console.error("Error updating pool config:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/me/pool-configs/:id - Delete a pool config
+router.delete("/pool-configs/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const supabase = getSupabase();
+  if (!supabase) {
+    return res.status(503).json({ error: "Database not configured" });
+  }
+
+  const { id } = req.params;
+
+  try {
+    const { error } = await supabase
+      .from("dex_pool_configs")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", req.userId)
+      .eq("is_global", false);
+
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("Error deleting pool config:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

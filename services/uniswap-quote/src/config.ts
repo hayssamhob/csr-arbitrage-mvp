@@ -40,9 +40,17 @@ const ConfigSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   CEX_SECRETS_KEY: z.string().optional(),
 
-  // Pool IDs
-  CSR_POOL_ID: z.string().default(""),
-  CSR25_POOL_ID: z.string().default(""),
+  // Pool IDs (verified live on mainnet)
+  CSR_POOL_ID: z
+    .string()
+    .default(
+      "0x6c76bb9f364e72fcb57819d2920550768cf43e09e819daa40fabe9c7ab057f9e"
+    ),
+  CSR25_POOL_ID: z
+    .string()
+    .default(
+      "0x46afcc847653fa391320b2bde548c59cf384b029933667c541fb730c5641778e"
+    ),
   CSR_POOL_FEE_BPS: z.coerce.number().optional(),
   CSR25_POOL_FEE_BPS: z.coerce.number().optional(),
   CSR_POOL_TICK_SPACING: z.coerce.number().optional(),
@@ -108,14 +116,16 @@ export function loadConfig(): Config {
   };
 }
 
-// Contract addresses for reference
+// Contract addresses for reference (verified mainnet)
 export const CONTRACTS = {
-  UNISWAP_V4_MANAGER: '0x000000000004444c5dc75cb358380d2e3de08a90',
-  UNISWAP_V4_QUOTER: '0x52F0E24D1c21C8A0cB1e5a5dD6198556BD9E1203', // V4 Quoter (Mainnet)
-  CSR_TOKEN: '0x75Ecb52e403C617679FBd3e77A50f9d10A842387',
-  CSR25_TOKEN: '0x502E7230E142A332DFEd1095F7174834b2548982',
-  WETH_TOKEN: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-  USDT_TOKEN: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+  // Official Uniswap V4 PoolManager - DO NOT CHANGE
+  UNISWAP_V4_MANAGER: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+  UNISWAP_V4_QUOTER: "0x52F0E24D1c21C8A0cB1e5a5dD6198556BD9E1203",
+  // Token addresses (checksummed)
+  CSR_TOKEN: "0x75Ecb52e403C617679FBd3e77A50f9d10A842387",
+  CSR25_TOKEN: "0x502E7230E142A332DFEd1095F7174834b2548982",
+  WETH_TOKEN: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+  USDT_TOKEN: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
 };
 
 console.log(`[Config] Loaded for environment: ${config.NODE_ENV}`);
